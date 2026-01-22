@@ -1,0 +1,55 @@
+====================================
+PHARMA COLLECT MOBILE - APK BUILD COMMANDS
+====================================
+
+FIRST TIME SETUP (Only once):
+-----------------------------
+1. Login to Expo:
+   npx eas login
+
+2. If you don't have an Expo account, create one at:
+   https://expo.dev/signup
+
+
+BUILD APK (Use these commands every time):
+------------------------------------------
+# Navigate to project folder
+cd /home/saboor.malik@2bvision.com/2bvt/pharma-collect-mobile
+
+# Build APK (cloud build - recommended)
+npx eas build --platform android --profile preview
+
+# The build will run in the cloud and give you a download link
+# Typical build time: 10-15 minutes
+
+
+ALTERNATIVE BUILD PROFILES:
+---------------------------
+# Development build (for testing with Expo Go)
+npx eas build --platform android --profile development
+
+# Production build (optimized, for app stores)
+npx eas build --platform android --profile production
+
+
+CHECK BUILD STATUS:
+-------------------
+npx eas build:list
+
+
+DOWNLOAD APK:
+-------------
+After build completes, you'll get a URL like:
+https://expo.dev/artifacts/eas/xxxxx.apk
+
+Or check your builds at:
+https://expo.dev/accounts/[your-username]/projects/pharma-collect-mobile/builds
+
+
+QUICK ONE-LINER (After first-time setup):
+-----------------------------------------
+cd ~/2bvt/pharma-collect-mobile && npx eas build --platform android --profile preview
+
+
+====================================
+
