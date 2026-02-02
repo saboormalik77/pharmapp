@@ -3,9 +3,6 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
 
 # Expo
 .expo/
@@ -35,9 +32,6 @@ android/.cxx/
 android/app/release/
 android/.externalNativeBuild/
 android/captures/
-android/gradle/
-android/gradlew
-android/gradlew.bat
 
 # iOS
 ios/Pods/
