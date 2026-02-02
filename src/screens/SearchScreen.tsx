@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+/**
+ * SearchScreen - NDC Search with 100% Local Storage
+ * 
+ * ALL data comes from local cache - NO API calls to /api/optimization/recommendations
+ * This provides instant results with the same functionality as the original API.
+ */
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,10 +15,10 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Modal,
-  Pressable,
   Dimensions,
   RefreshControl,
+  FlatList,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -21,13 +28,15 @@ import {
   ChevronDown,
   DollarSign,
   Package,
-  TrendingDown,
   AlertCircle,
   CheckCircle2,
   Building2,
   Hash,
+  Zap,
 } from 'lucide-react-native';
-import { optimizationService, Recommendation, OptimizationRecommendations } from '../api/services';
+import { Recommendation, OptimizationRecommendations } from '../api/services';
+import { useNDCSearch, NDCPricingData } from '../hooks/useNDCSearch';
+import { getNDCByCode } from '../store/ndcCacheStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = (size: number) => (SCREEN_WIDTH / 375) * size;
@@ -46,14 +55,16 @@ interface NdcItem {
 }
 
 export function SearchScreen({ navigation }: any) {
-  // State
+  // ============================================================
+  // State for EXISTING optimization API (same functionality)
+  // ============================================================
   const [recommendation, setRecommendation] = useState<OptimizationRecommendations | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // NDC search state
+  // NDC selection state
   const [ndcSearchInput, setNdcSearchInput] = useState('');
   const [selectedNdcs, setSelectedNdcs] = useState<NdcItem[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -67,6 +78,38 @@ export function SearchScreen({ navigation }: any) {
 
   // Dropdown state
   const [openDropdownNdc, setOpenDropdownNdc] = useState<string | null>(null);
+
+  // ============================================================
+  // NEW: Instant autocomplete using fast search API
+  // ============================================================
+  const {
+    results: autocompleteResults,
+    isLoading: isAutocompleting,
+    search: searchAutocomplete,
+    clearResults: clearAutocomplete,
+    isFromCache,
+    cacheStats
+  } = useNDCSearch({
+    debounceMs: 100,
+    minSearchLength: 2
+  });
+
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+
+  // Trigger autocomplete on input change
+  useEffect(() => {
+    if (ndcSearchInput.length >= 2) {
+      searchAutocomplete(ndcSearchInput);
+      setShowAutocomplete(true);
+    } else {
+      clearAutocomplete();
+      setShowAutocomplete(false);
+    }
+  }, [ndcSearchInput]);
+
+  // ============================================================
+  // Existing Logic (unchanged)
+  // ============================================================
 
   // Get displayed data for a recommendation
   const getDisplayedData = (rec: Recommendation) => {
@@ -151,7 +194,21 @@ export function SearchScreen({ navigation }: any) {
     return selectedNdcs.some(item => item.ndc === ndc);
   };
 
-  // Handle add NDC
+  // Handle add NDC from autocomplete
+  const handleAddFromAutocomplete = (item: NDCPricingData) => {
+    if (isDuplicateNdc(item.ndc)) {
+      setError('This NDC is already added');
+      return;
+    }
+
+    setSelectedNdcs([...selectedNdcs, { ndc: item.ndc }]);
+    setNdcSearchInput('');
+    setShowAutocomplete(false);
+    clearAutocomplete();
+    setError(null);
+  };
+
+  // Handle add NDC manually
   const handleAddNdc = () => {
     const trimmedNdc = ndcSearchInput.trim();
     if (!trimmedNdc) {
@@ -166,6 +223,8 @@ export function SearchScreen({ navigation }: any) {
 
     setSelectedNdcs([...selectedNdcs, { ndc: trimmedNdc }]);
     setNdcSearchInput('');
+    setShowAutocomplete(false);
+    clearAutocomplete();
     setError(null);
   };
 
@@ -174,7 +233,8 @@ export function SearchScreen({ navigation }: any) {
     setSelectedNdcs(selectedNdcs.filter(item => item.ndc !== ndcToRemove));
   };
 
-  // Handle search
+  // Handle search - 100% LOCAL (no API call)
+  // EXACT same logic as /api/optimization/recommendations
   const handleSearch = async () => {
     if (selectedNdcs.length === 0) {
       setError('Please add at least one NDC code to search');
@@ -186,8 +246,131 @@ export function SearchScreen({ navigation }: any) {
     setHasSearched(true);
 
     try {
-      const apiItems = selectedNdcs.map(item => ({ ndc: item.ndc, fullCount: 0, partialCount: 0 }));
-      const data = await optimizationService.getRecommendations(apiItems);
+      // Build recommendations from LOCAL CACHE - EXACT same format as optimization API
+      const recommendations: Recommendation[] = [];
+      
+      for (const item of selectedNdcs) {
+        // Get data from local cache
+        const cachedData = getNDCByCode(item.ndc);
+        
+        if (cachedData && cachedData.distributors && cachedData.distributors.length > 0) {
+          // Step 1: Calculate main "price" for each distributor
+          // In search mode: price = fullPrice if available, else partialPrice
+          // This matches the backend logic at optimizationService.ts lines 1047-1060
+          const distributorsWithPrice = cachedData.distributors.map(dist => {
+            const fullPrice = dist.fullPrice || 0;
+            const partialPrice = dist.partialPrice || 0;
+            // Main price = fullPrice if > 0, else partialPrice
+            const price = fullPrice > 0 ? fullPrice : partialPrice;
+            return {
+              ...dist,
+              fullPrice,
+              partialPrice,
+              price, // Main price for sorting
+            };
+          });
+
+          // Step 2: Filter out distributors with no valid price
+          const validDistributors = distributorsWithPrice.filter(d => d.price > 0);
+
+          if (validDistributors.length === 0) {
+            // No valid distributors - return empty recommendation
+            recommendations.push({
+              ndc: cachedData.ndc,
+              productName: cachedData.productName || `Product ${cachedData.ndc}`,
+              quantity: 1,
+              recommendedDistributor: '',
+              expectedPrice: 0,
+              worstPrice: 0,
+              alternativeDistributors: [],
+              savings: 0,
+              available: true,
+            });
+            continue;
+          }
+
+          // Step 3: Sort by price (highest first = best for returns)
+          // This matches backend logic at optimizationService.ts line 1133
+          validDistributors.sort((a, b) => b.price - a.price);
+
+          // Step 4: Best distributor = first (highest price)
+          const bestDistributor = validDistributors[0];
+          const alternativeDistributors = validDistributors.slice(1);
+
+          // Step 5: Calculate prices (matching backend exactly)
+          // expectedPrice = best distributor's main price
+          const expectedPrice = bestDistributor.price;
+          
+          // worstPrice = worst distributor's main price (last in sorted list)
+          const worstDistributor = validDistributors[validDistributors.length - 1];
+          const worstPrice = worstDistributor.price;
+
+          // savings = expectedPrice - worstPrice
+          const savings = expectedPrice - worstPrice;
+
+          // Step 6: fullPricePerUnit and partialPricePerUnit come from BEST distributor
+          // This matches backend response format
+          const fullPricePerUnit = bestDistributor.fullPrice;
+          const partialPricePerUnit = bestDistributor.partialPrice;
+
+          const recommendation: Recommendation = {
+            ndc: cachedData.ndc,
+            productName: cachedData.productName || `Product ${cachedData.ndc}`,
+            quantity: 1,
+            recommendedDistributor: bestDistributor.name || '',
+            recommendedDistributorId: bestDistributor.id,
+            recommendedDistributorContact: {
+              email: bestDistributor.email,
+              phone: bestDistributor.phone,
+              location: bestDistributor.location,
+            },
+            expectedPrice,
+            worstPrice,
+            // These are from BEST distributor (matching backend)
+            fullPricePerUnit,
+            partialPricePerUnit,
+            alternativeDistributors: alternativeDistributors.map(dist => ({
+              id: dist.id,
+              name: dist.name,
+              // Main price for this distributor
+              price: dist.price,
+              // Individual full/partial prices
+              fullPrice: dist.fullPrice,
+              partialPrice: dist.partialPrice,
+              // Difference from best price
+              difference: dist.price - expectedPrice,
+              email: dist.email,
+              phone: dist.phone,
+              location: dist.location,
+            })),
+            savings,
+            available: true,
+          };
+
+          recommendations.push(recommendation);
+        } else {
+          // NDC not found in cache or has no distributors - add with empty values
+          const recommendation: Recommendation = {
+            ndc: item.ndc,
+            productName: cachedData?.productName || `Product ${item.ndc}`,
+            quantity: 1,
+            recommendedDistributor: '',
+            expectedPrice: 0,
+            worstPrice: 0,
+            alternativeDistributors: [],
+            savings: 0,
+            available: false,
+          };
+          recommendations.push(recommendation);
+        }
+      }
+
+      // Build response in same format as optimization API
+      const data: OptimizationRecommendations = {
+        recommendations,
+        totalPotentialSavings: recommendations.reduce((sum, r) => sum + r.savings, 0),
+        generatedAt: new Date().toISOString(),
+      };
       
       setRecommendation(data);
       setSelectedDistributors({});
@@ -218,6 +401,8 @@ export function SearchScreen({ navigation }: any) {
     setEditableFullQuantities({});
     setEditablePartialQuantities({});
     setError(null);
+    setShowAutocomplete(false);
+    clearAutocomplete();
   };
 
   // Handle quantity change
@@ -246,7 +431,32 @@ export function SearchScreen({ navigation }: any) {
     }
   };
 
-  // Product Card Component
+  // ============================================================
+  // Render Functions
+  // ============================================================
+
+  // Render autocomplete item
+  const renderAutocompleteItem = ({ item }: { item: NDCPricingData }) => (
+    <TouchableOpacity
+      style={styles.autocompleteItem}
+      onPress={() => handleAddFromAutocomplete(item)}
+    >
+      <View style={styles.autocompleteItemLeft}>
+        <Text style={styles.autocompleteNdc}>{item.ndc}</Text>
+        <Text style={styles.autocompleteProduct} numberOfLines={1}>
+          {item.productName || 'Unknown Product'}
+        </Text>
+      </View>
+      <View style={styles.autocompleteItemRight}>
+        <Text style={styles.autocompletePrice}>
+          {formatCurrency(item.bestFullPrice || 0)}
+        </Text>
+        <Text style={styles.autocompletePriceLabel}>Best Price</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  // Product Card Component (UNCHANGED from original)
   const ProductCard = ({ rec }: { rec: Recommendation }) => {
     const displayedData = getDisplayedData(rec);
     const distributors = getAllDistributors(rec);
@@ -404,6 +614,12 @@ export function SearchScreen({ navigation }: any) {
       >
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Search Recommendations</Text>
+          {cacheStats.uniqueNdcs > 0 && (
+            <View style={styles.cacheIndicator}>
+              <Zap color="#14B8A6" size={moderateScale(10)} />
+              <Text style={styles.cacheText}>Instant</Text>
+            </View>
+          )}
         </View>
       </LinearGradient>
 
@@ -434,13 +650,14 @@ export function SearchScreen({ navigation }: any) {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#14B8A6" />
         }
+        keyboardShouldPersistTaps="handled"
       >
         {/* Search Section */}
         <View style={styles.searchCard}>
           <Text style={styles.searchTitle}>Enter NDC Codes</Text>
           <Text style={styles.searchSubtitle}>Add one or more NDC codes to search for recommendations</Text>
           
-          {/* NDC Input */}
+          {/* NDC Input with Autocomplete */}
           <View style={styles.ndcInputRow}>
             <View style={styles.ndcInputContainer}>
               <Hash color="#9CA3AF" size={moderateScale(14)} />
@@ -452,12 +669,34 @@ export function SearchScreen({ navigation }: any) {
                 placeholderTextColor="#9CA3AF"
                 onSubmitEditing={handleAddNdc}
                 returnKeyType="done"
+                autoCorrect={false}
+                autoCapitalize="none"
               />
+              {isAutocompleting && (
+                <ActivityIndicator size="small" color="#14B8A6" />
+              )}
+              {isFromCache && autocompleteResults.length > 0 && (
+                <Zap color="#14B8A6" size={moderateScale(12)} />
+              )}
             </View>
             <TouchableOpacity style={styles.addButton} onPress={handleAddNdc}>
               <Plus color="#FFFFFF" size={moderateScale(16)} />
             </TouchableOpacity>
           </View>
+
+          {/* Autocomplete Dropdown */}
+          {showAutocomplete && autocompleteResults.length > 0 && (
+            <View style={styles.autocompleteDropdown}>
+              <FlatList
+                data={autocompleteResults.slice(0, 10)}
+                keyExtractor={(item) => item.ndcNormalized}
+                renderItem={renderAutocompleteItem}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                style={styles.autocompleteList}
+              />
+            </View>
+          )}
 
           {/* Selected NDCs */}
           {selectedNdcs.length > 0 && (
@@ -559,6 +798,9 @@ export function SearchScreen({ navigation }: any) {
             </Text>
           </View>
         )}
+
+        {/* Bottom Padding */}
+        <View style={{ height: moderateScale(100) }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -587,6 +829,20 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(16),
     fontWeight: 'bold',
     color: '#1F2937',
+  },
+  cacheIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: moderateScale(4),
+    backgroundColor: '#F0FDFA',
+    paddingHorizontal: moderateScale(8),
+    paddingVertical: moderateScale(4),
+    borderRadius: moderateScale(12),
+  },
+  cacheText: {
+    fontSize: moderateScale(10),
+    color: '#0F766E',
+    fontWeight: '500',
   },
   // Alerts
   alertError: {
@@ -630,7 +886,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: moderateScale(8),
     paddingTop: moderateScale(16),
-    paddingBottom: moderateScale(100), // Extra padding for bottom tab bar
   },
   // Search Card
   searchCard: {
@@ -681,6 +936,59 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Autocomplete Dropdown
+  autocompleteDropdown: {
+    marginTop: moderateScale(8),
+    backgroundColor: '#FFFFFF',
+    borderRadius: moderateScale(8),
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    maxHeight: moderateScale(200),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  autocompleteList: {
+    maxHeight: moderateScale(200),
+  },
+  autocompleteItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: moderateScale(12),
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  autocompleteItemLeft: {
+    flex: 1,
+    marginRight: moderateScale(12),
+  },
+  autocompleteNdc: {
+    fontSize: moderateScale(13),
+    fontWeight: '600',
+    color: '#1F2937',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  autocompleteProduct: {
+    fontSize: moderateScale(11),
+    color: '#6B7280',
+    marginTop: moderateScale(2),
+  },
+  autocompleteItemRight: {
+    alignItems: 'flex-end',
+  },
+  autocompletePrice: {
+    fontSize: moderateScale(14),
+    fontWeight: 'bold',
+    color: '#14B8A6',
+  },
+  autocompletePriceLabel: {
+    fontSize: moderateScale(9),
+    color: '#9CA3AF',
+  },
+  // Selected NDCs
   selectedNdcsContainer: {
     marginTop: moderateScale(12),
   },
@@ -837,7 +1145,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(10),
     color: '#6B7280',
     marginTop: moderateScale(2),
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   // Distributor Section
   distributorSection: {

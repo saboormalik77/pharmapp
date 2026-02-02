@@ -91,3 +91,11 @@ export type {
   CheckoutSessionResponse,
   PortalSessionResponse,
 } from './subscriptionService';
+
+export { ndcSearchService } from './ndcSearchService';
+export type {
+  DistributorPricing as NDCDistributorPricing,
+  NDCSearchResult,
+  NDCSearchResponse,
+  NDCIndexResponse,
+} from './ndcSearchService';
