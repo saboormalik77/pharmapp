@@ -13,8 +13,12 @@ import {
   TextInput,
   Dimensions,
   Platform,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Paths, File } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   Box,
   Truck,
@@ -37,6 +41,8 @@ import {
   FileText,
   Info,
   CheckCircle2,
+  Download,
+  Pencil,
 } from 'lucide-react-native';
 import {
   packagesService,
@@ -45,6 +51,7 @@ import {
   PackagesResponse,
   DeliveryInfo,
 } from '../api/services';
+import { useNavigation } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = (size: number) => (SCREEN_WIDTH / 375) * size;
@@ -69,6 +76,8 @@ const allowedCarriers = ['UPS', 'FedEx', 'USPS', 'DHL', 'Other'];
 const allowedConditions = ['good', 'damaged', 'partial', 'missing_items', 'other'];
 
 export function PackagesScreen() {
+  const navigation = useNavigation();
+  
   // Data State
   const [packagesData, setPackagesData] = useState<PackagesResponse | null>(null);
   const [packagesCache, setPackagesCache] = useState<PackagesResponse | null>(null);
@@ -80,6 +89,8 @@ export function PackagesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [packageType, setPackageType] = useState<'packages' | 'suggested'>('packages');
+  const [exporting, setExporting] = useState(false);
+  const [exportingPackageId, setExportingPackageId] = useState<string | null>(null);
   
   // Modal State
   const [selectedPackage, setSelectedPackage] = useState<PackageType | null>(null);
@@ -92,14 +103,20 @@ export function PackagesScreen() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [selectingPackageId, setSelectingPackageId] = useState<string | null>(null);
   
+  // Edit/Delete Item States
+  const [editingItems, setEditingItems] = useState<Map<string, { full: number; partial: number }>>(new Map());
+  const [editingItemIds, setEditingItemIds] = useState<Set<string>>(new Set());
+  const [updatingItem, setUpdatingItem] = useState<string | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<{ packageId: string; itemId: string; itemName: string } | null>(null);
+  
   // Fee Rate Selection for Suggested Packages
   const [selectedFeeRates, setSelectedFeeRates] = useState<Map<string, string>>(new Map());
   
   // Delivery Form Data
   const [deliveryFormData, setDeliveryFormData] = useState({
     contactName: '',
-    deliveryDate: '',
-    deliveryTime: '',
+    deliveryDate: new Date(),
+    deliveryTime: new Date(),
     deliveryCondition: '',
     trackingNumber: '',
     carrier: '',
@@ -107,6 +124,8 @@ export function PackagesScreen() {
   });
   const [showCarrierPicker, setShowCarrierPicker] = useState(false);
   const [showConditionPicker, setShowConditionPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Fetch packages on mount
   useEffect(() => {
@@ -246,7 +265,7 @@ export function PackagesScreen() {
       return;
     }
 
-    if (!deliveryFormData.contactName || !deliveryFormData.deliveryDate || !deliveryFormData.deliveryCondition || !deliveryFormData.trackingNumber || !deliveryFormData.carrier) {
+    if (!deliveryFormData.contactName || !deliveryFormData.deliveryCondition || !deliveryFormData.trackingNumber || !deliveryFormData.carrier) {
       setError('Please fill in all required fields');
       return;
     }
@@ -255,11 +274,21 @@ export function PackagesScreen() {
       setUpdatingStatusId(deliveryPackage.id);
       setError(null);
       
-      const timePart = deliveryFormData.deliveryTime || '10:30';
-      const deliveryDateTime = `${deliveryFormData.deliveryDate}T${timePart}:00Z`;
+      // Combine date and time properly in ISO format
+      const deliveryDate = deliveryFormData.deliveryDate;
+      const deliveryTime = deliveryFormData.deliveryTime;
+      
+      const combinedDateTime = new Date(
+        deliveryDate.getFullYear(),
+        deliveryDate.getMonth(),
+        deliveryDate.getDate(),
+        deliveryTime.getHours(),
+        deliveryTime.getMinutes(),
+        0
+      );
       
       const deliveryInfo = {
-        deliveryDate: deliveryDateTime,
+        deliveryDate: combinedDateTime.toISOString(),
         receivedBy: deliveryFormData.contactName,
         deliveryCondition: deliveryFormData.deliveryCondition,
         deliveryNotes: deliveryFormData.notes || '',
@@ -307,8 +336,8 @@ export function PackagesScreen() {
     setDeliveryPackage(null);
     setDeliveryFormData({
       contactName: '',
-      deliveryDate: '',
-      deliveryTime: '',
+      deliveryDate: new Date(),
+      deliveryTime: new Date(),
       deliveryCondition: '',
       trackingNumber: '',
       carrier: '',
@@ -316,6 +345,8 @@ export function PackagesScreen() {
     });
     setShowCarrierPicker(false);
     setShowConditionPicker(false);
+    setShowDatePicker(false);
+    setShowTimePicker(false);
   };
 
   // Select Package (Create from Suggested)
@@ -389,6 +420,285 @@ export function PackagesScreen() {
       setError(err.message || 'Failed to create package');
     } finally {
       setSelectingPackageId(null);
+    }
+  };
+
+  // Generate CSV content from packages data
+  const generateCSVContent = (packagesToExport: PackageType[]): string => {
+    const headers = [
+      'Distributor Name',
+      'Distributor ID',
+      'Total Items',
+      'Total Value',
+      'Status',
+      'Email',
+      'Phone',
+      'Location',
+      'Product Name',
+      'NDC',
+      'Full Units',
+      'Partial Units',
+      'Price Per Unit',
+      'Total Value (Item)',
+    ];
+
+    const rows: string[][] = [];
+    
+    packagesToExport.forEach((pkg) => {
+      const items = (pkg as any).items || pkg.products || [];
+      const isDelivered = pkg.status === true;
+      
+      if (items.length === 0) {
+        rows.push([
+          pkg.distributorName || '',
+          pkg.distributorId || '',
+          '0',
+          pkg.totalEstimatedValue?.toString() || '0',
+          packageType === 'packages' ? (isDelivered ? 'Delivered' : 'Pending') : 'N/A',
+          pkg.distributorContact?.email || '',
+          pkg.distributorContact?.phone || '',
+          pkg.distributorContact?.location || '',
+          'N/A',
+          'N/A',
+          'N/A',
+          'N/A',
+          'N/A',
+          'N/A',
+        ]);
+      } else {
+        items.forEach((item: any, index: number) => {
+          const full = item.full ?? 0;
+          const partial = item.partial ?? 0;
+          const pricePerUnit = item.pricePerUnit ?? 0;
+          const itemTotalValue = item.totalValue ?? (pricePerUnit * (full + partial));
+          
+          rows.push([
+            index === 0 ? (pkg.distributorName || '') : '',
+            index === 0 ? (pkg.distributorId || '') : '',
+            index === 0 ? items.length.toString() : '',
+            index === 0 ? (pkg.totalEstimatedValue?.toString() || '0') : '',
+            index === 0 && packageType === 'packages' ? (isDelivered ? 'Delivered' : 'Pending') : '',
+            index === 0 ? (pkg.distributorContact?.email || '') : '',
+            index === 0 ? (pkg.distributorContact?.phone || '') : '',
+            index === 0 ? (pkg.distributorContact?.location || '') : '',
+            item.productName || '',
+            item.ndc || '',
+            full.toString(),
+            partial.toString(),
+            pricePerUnit.toString(),
+            itemTotalValue.toString(),
+          ]);
+        });
+      }
+    });
+
+    // Escape CSV values
+    const escapeCSV = (value: string): string => {
+      if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    };
+
+    const csvContent = [
+      headers.map(escapeCSV).join(','),
+      ...rows.map(row => row.map(escapeCSV).join(',')),
+    ].join('\n');
+
+    return csvContent;
+  };
+
+  // Export all packages to CSV
+  const handleExportAll = async () => {
+    if (packageType !== 'packages') {
+      setError('Export is only available for packages');
+      return;
+    }
+
+    if (!packagesData || !packagesData.packages || packagesData.packages.length === 0) {
+      setError('No packages available to export');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      setError(null);
+
+      const csvContent = generateCSVContent(packagesData.packages);
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `Packages_${timestamp}.csv`;
+      
+      // Create file in document directory using new expo-file-system API
+      const file = new File(Paths.document, filename);
+      await file.write(csvContent);
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Export Packages',
+          UTI: 'public.comma-separated-values-text',
+        });
+        setSuccess('Packages exported successfully');
+      } else {
+        setError('Sharing is not available on this device');
+      }
+
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to export packages');
+      console.error('Error exporting packages:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Export single package to CSV
+  const handleExportSinglePackage = async (pkg: PackageType) => {
+    try {
+      setExportingPackageId(pkg.id || pkg.distributorId || '');
+      setError(null);
+
+      const csvContent = generateCSVContent([pkg]);
+      const timestamp = new Date().toISOString().split('T')[0];
+      const safeName = (pkg.distributorName || 'Package').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Package_${safeName}_${timestamp}.csv`;
+      
+      // Create file in document directory using new expo-file-system API
+      const file = new File(Paths.document, filename);
+      await file.write(csvContent);
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Export Package',
+          UTI: 'public.comma-separated-values-text',
+        });
+        setSuccess('Package exported successfully');
+      } else {
+        setError('Sharing is not available on this device');
+      }
+
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to export package');
+      console.error('Error exporting package:', err);
+    } finally {
+      setExportingPackageId(null);
+    }
+  };
+
+  // Navigate to Create Package screen
+  const handleCreatePackage = () => {
+    (navigation as any).navigate('PackageSuggestions');
+  };
+
+  // Edit Item Handlers
+  const handleEditItem = (packageId: string, itemId: string, item: any) => {
+    const key = `${packageId}-${itemId}`;
+    setEditingItemIds(new Set(editingItemIds).add(key));
+    setEditingItems(new Map(editingItems.set(key, { full: item.full ?? 0, partial: item.partial ?? 0 })));
+  };
+
+  const handleCancelEdit = (packageId: string, itemId: string) => {
+    const key = `${packageId}-${itemId}`;
+    const newEditingIds = new Set(editingItemIds);
+    newEditingIds.delete(key);
+    setEditingItemIds(newEditingIds);
+    
+    const newEditingItems = new Map(editingItems);
+    newEditingItems.delete(key);
+    setEditingItems(newEditingItems);
+  };
+
+  const handleUnitChange = (packageId: string, itemId: string, item: any, field: 'full' | 'partial', value: number) => {
+    if (value < 0) return;
+    const key = `${packageId}-${itemId}`;
+    const currentEdit = editingItems.get(key) || { full: item.full ?? 0, partial: item.partial ?? 0 };
+    const newEdit = { ...currentEdit, [field]: value };
+    setEditingItems(new Map(editingItems.set(key, newEdit)));
+  };
+
+  const handleSubmitItem = async (packageId: string, itemId: string, item: any) => {
+    const key = `${packageId}-${itemId}`;
+    const editedValues = editingItems.get(key);
+    
+    if (!editedValues) return;
+    
+    setUpdatingItem(itemId);
+    setError(null);
+    
+    try {
+      const pricePerUnit = item.pricePerUnit ?? 0;
+      const totalUnits = editedValues.full + editedValues.partial;
+      const newTotalValue = pricePerUnit * totalUnits;
+      
+      await optimizationService.updatePackageItem(packageId, itemId, {
+        ndc: item.ndc,
+        productName: item.productName,
+        full: editedValues.full,
+        partial: editedValues.partial,
+        pricePerUnit: pricePerUnit,
+        totalValue: newTotalValue,
+      });
+      
+      await fetchPackages('packages');
+      
+      // Update selectedPackage if it's the same package
+      if (selectedPackage && (selectedPackage as any).id === packageId) {
+        const updated = await packagesService.getCustomPackages();
+        const updatedPackage = updated.packages?.find((p: any) => p.id === packageId);
+        if (updatedPackage) {
+          setSelectedPackage(updatedPackage);
+        }
+      }
+      
+      handleCancelEdit(packageId, itemId);
+      setSuccess('Item updated successfully');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update item');
+    } finally {
+      setUpdatingItem(null);
+    }
+  };
+
+  const handleDeleteItem = (packageId: string, itemId: string, itemName: string) => {
+    setDeletingItemId({ packageId, itemId, itemName });
+    setError(null);
+  };
+
+  const confirmDeleteItem = async () => {
+    if (!deletingItemId) return;
+    
+    setUpdatingItem(deletingItemId.itemId);
+    setError(null);
+    
+    try {
+      await optimizationService.deletePackageItem(deletingItemId.packageId, deletingItemId.itemId);
+      
+      await fetchPackages('packages');
+      
+      // Update selectedPackage if it's the same package
+      if (selectedPackage && (selectedPackage as any).id === deletingItemId.packageId) {
+        const updated = await packagesService.getCustomPackages();
+        const updatedPackage = updated.packages?.find((p: any) => p.id === deletingItemId.packageId);
+        if (updatedPackage) {
+          setSelectedPackage(updatedPackage);
+        } else {
+          // If package has no items left, close the modal
+          setSelectedPackage(null);
+        }
+      }
+      
+      setDeletingItemId(null);
+      setSuccess('Item deleted successfully');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete item');
+    } finally {
+      setUpdatingItem(null);
     }
   };
 
@@ -554,6 +864,24 @@ export function PackagesScreen() {
             <Text style={styles.actionButtonText}>View</Text>
           </TouchableOpacity>
 
+          {/* Export button for packages tab */}
+          {packageType === 'packages' && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.actionButtonExport]}
+              onPress={() => handleExportSinglePackage(pkg)}
+              disabled={exportingPackageId === (pkg.id || pkg.distributorId)}
+            >
+              {exportingPackageId === (pkg.id || pkg.distributorId) ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Download color="#FFFFFF" size={moderateScale(12)} />
+                  <Text style={styles.actionButtonText}>Export</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
           {packageType === 'packages' && !isDelivered && (
             <TouchableOpacity
               style={[styles.actionButton, styles.actionButtonDeliver]}
@@ -629,6 +957,34 @@ export function PackagesScreen() {
       >
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Packages</Text>
+          {/* Header Action Buttons */}
+          {packageType === 'packages' && (
+            <View style={styles.headerActions}>
+              {packagesData && packagesData.packages && packagesData.packages.length > 0 && (
+                <TouchableOpacity
+                  style={styles.headerButton}
+                  onPress={handleExportAll}
+                  disabled={exporting}
+                >
+                  {exporting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Download color="#FFFFFF" size={moderateScale(12)} />
+                      <Text style={styles.headerButtonText}>Export All</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.headerButton, styles.headerButtonCreate]}
+                onPress={handleCreatePackage}
+              >
+                <Plus color="#FFFFFF" size={moderateScale(12)} />
+                <Text style={styles.headerButtonText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </LinearGradient>
 
@@ -797,20 +1153,118 @@ export function PackagesScreen() {
                 {/* Items */}
                 <View style={styles.modalSection}>
                   <Text style={styles.modalSectionTitle}>Items ({((selectedPackage as any).items || selectedPackage.products || []).length})</Text>
-                  {((selectedPackage as any).items || selectedPackage.products || []).map((item: any, index: number) => (
-                    <View key={index} style={styles.modalItem}>
-                      <View style={styles.modalItemHeader}>
-                        <Text style={styles.modalItemName} numberOfLines={1}>{item.productName}</Text>
-                        <Text style={styles.modalItemPrice}>{formatCurrency(item.totalValue || 0)}</Text>
+                  {((selectedPackage as any).items || selectedPackage.products || []).map((item: any, index: number) => {
+                    const packageId = (selectedPackage as any).id;
+                    const itemId = item.id || item.itemId || `${item.ndc}-${index}`;
+                    const editKey = `${packageId}-${itemId}`;
+                    
+                    const editedValues = editingItems.get(editKey);
+                    const full = editedValues?.full ?? item.full ?? 0;
+                    const partial = editedValues?.partial ?? item.partial ?? 0;
+                    const pricePerUnit = item.pricePerUnit ?? 0;
+                    const fullPrice = pricePerUnit * full;
+                    const partialPrice = pricePerUnit * partial;
+                    const totalValue = fullPrice + partialPrice;
+                    
+                    const isUpdating = updatingItem === itemId;
+                    const isEditing = editingItemIds.has(editKey);
+                    
+                    return (
+                      <View key={index} style={styles.modalItem}>
+                        <View style={styles.modalItemHeader}>
+                          <View style={styles.modalItemNameContainer}>
+                            <Text style={styles.modalItemName} numberOfLines={1}>{item.productName}</Text>
+                            <Text style={styles.modalItemNdc}>NDC: {item.ndc}</Text>
+                          </View>
+                          <Text style={styles.modalItemPrice}>{formatCurrency(isEditing ? totalValue : (item.totalValue || 0))}</Text>
+                        </View>
+                        
+                        <View style={styles.modalItemUnitsRow}>
+                          <View style={styles.modalItemUnitGroup}>
+                            <Text style={styles.modalItemUnitLabel}>Full Units</Text>
+                            {isEditing ? (
+                              <TextInput
+                                style={[styles.modalItemUnitInput, isUpdating && styles.inputDisabled]}
+                                value={full.toString()}
+                                onChangeText={(text) => {
+                                  const val = text === '' ? 0 : parseInt(text) || 0;
+                                  handleUnitChange(packageId, itemId, item, 'full', val);
+                                }}
+                                keyboardType="numeric"
+                                editable={!isUpdating}
+                              />
+                            ) : (
+                              <Text style={styles.modalItemUnitValue}>{full}</Text>
+                            )}
+                          </View>
+                          
+                          <View style={styles.modalItemUnitGroup}>
+                            <Text style={styles.modalItemUnitLabel}>Partial Units</Text>
+                            {isEditing ? (
+                              <TextInput
+                                style={[styles.modalItemUnitInput, isUpdating && styles.inputDisabled]}
+                                value={partial.toString()}
+                                onChangeText={(text) => {
+                                  const val = text === '' ? 0 : parseInt(text) || 0;
+                                  handleUnitChange(packageId, itemId, item, 'partial', val);
+                                }}
+                                keyboardType="numeric"
+                                editable={!isUpdating}
+                              />
+                            ) : (
+                              <Text style={styles.modalItemUnitValue}>{partial}</Text>
+                            )}
+                          </View>
+                          
+                          <View style={styles.modalItemUnitGroup}>
+                            <Text style={styles.modalItemUnitLabel}>Price/Unit</Text>
+                            <Text style={styles.modalItemUnitValue}>{formatCurrency(pricePerUnit)}</Text>
+                          </View>
+                        </View>
+                        
+                        {/* Action Buttons */}
+                        <View style={styles.modalItemActions}>
+                          {isUpdating ? (
+                            <ActivityIndicator size="small" color="#14B8A6" />
+                          ) : isEditing ? (
+                            <>
+                              <TouchableOpacity
+                                style={styles.modalItemActionButton}
+                                onPress={() => handleSubmitItem(packageId, itemId, item)}
+                              >
+                                <CheckCircle color="#22C55E" size={moderateScale(16)} />
+                                <Text style={styles.modalItemActionText}>Save</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.modalItemActionButton, styles.modalItemActionButtonCancel]}
+                                onPress={() => handleCancelEdit(packageId, itemId)}
+                              >
+                                <X color="#6B7280" size={moderateScale(16)} />
+                                <Text style={[styles.modalItemActionText, styles.modalItemActionTextCancel]}>Cancel</Text>
+                              </TouchableOpacity>
+                            </>
+                          ) : (
+                            <>
+                              <TouchableOpacity
+                                style={styles.modalItemActionButton}
+                                onPress={() => handleEditItem(packageId, itemId, item)}
+                              >
+                                <Pencil color="#14B8A6" size={moderateScale(16)} />
+                                <Text style={styles.modalItemActionText}>Edit</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.modalItemActionButton, styles.modalItemActionButtonDelete]}
+                                onPress={() => handleDeleteItem(packageId, itemId, item.productName)}
+                              >
+                                <Trash2 color="#EF4444" size={moderateScale(16)} />
+                                <Text style={[styles.modalItemActionText, styles.modalItemActionTextDelete]}>Delete</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                        </View>
                       </View>
-                      <Text style={styles.modalItemNdc}>NDC: {item.ndc}</Text>
-                      <View style={styles.modalItemDetails}>
-                        <Text style={styles.modalItemDetail}>Full: {item.full ?? 0}</Text>
-                        <Text style={styles.modalItemDetail}>Partial: {item.partial ?? 0}</Text>
-                        <Text style={styles.modalItemDetail}>@ {formatCurrency(item.pricePerUnit || 0)}/unit</Text>
-                      </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
 
                 {/* Total */}
@@ -832,7 +1286,7 @@ export function PackagesScreen() {
         onRequestClose={closeDeliveryModal}
       >
         <Pressable style={styles.modalOverlay} onPress={closeDeliveryModal}>
-          <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
+          <Pressable style={styles.modalContentDelivery} onPress={e => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Mark as Delivered</Text>
@@ -843,7 +1297,7 @@ export function PackagesScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBodyScrollable} showsVerticalScrollIndicator={false}>
               {/* Received By */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Received By *</Text>
@@ -859,25 +1313,64 @@ export function PackagesScreen() {
               {/* Delivery Date */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Delivery Date *</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={deliveryFormData.deliveryDate}
-                  onChangeText={(text) => setDeliveryFormData(prev => ({ ...prev, deliveryDate: text }))}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#9CA3AF"
-                />
+                <TouchableOpacity
+                  style={styles.formSelect}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={styles.formSelectText}>
+                    {deliveryFormData.deliveryDate.toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                  <ChevronDown color="#6B7280" size={moderateScale(16)} />
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={deliveryFormData.deliveryDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event: DateTimePickerEvent, selectedDate?: Date) => {
+                      setShowDatePicker(Platform.OS === 'ios');
+                      if (selectedDate) {
+                        setDeliveryFormData(prev => ({ ...prev, deliveryDate: selectedDate }));
+                      }
+                    }}
+                    maximumDate={new Date()}
+                  />
+                )}
               </View>
 
               {/* Delivery Time */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Delivery Time</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={deliveryFormData.deliveryTime}
-                  onChangeText={(text) => setDeliveryFormData(prev => ({ ...prev, deliveryTime: text }))}
-                  placeholder="HH:MM (optional)"
-                  placeholderTextColor="#9CA3AF"
-                />
+                <Text style={styles.formLabel}>Delivery Time *</Text>
+                <TouchableOpacity
+                  style={styles.formSelect}
+                  onPress={() => setShowTimePicker(true)}
+                >
+                  <Text style={styles.formSelectText}>
+                    {deliveryFormData.deliveryTime.toLocaleTimeString('en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
+                  </Text>
+                  <ChevronDown color="#6B7280" size={moderateScale(16)} />
+                </TouchableOpacity>
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={deliveryFormData.deliveryTime}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event: DateTimePickerEvent, selectedTime?: Date) => {
+                      setShowTimePicker(Platform.OS === 'ios');
+                      if (selectedTime) {
+                        setDeliveryFormData(prev => ({ ...prev, deliveryTime: selectedTime }));
+                      }
+                    }}
+                  />
+                )}
               </View>
 
               {/* Tracking Number */}
@@ -965,10 +1458,18 @@ export function PackagesScreen() {
                   numberOfLines={3}
                 />
               </View>
+            </ScrollView>
 
-              {/* Submit Button */}
+            {/* Action Buttons - Fixed at bottom */}
+            <View style={styles.modalFooter}>
               <TouchableOpacity
-                style={[styles.submitButton, updatingStatusId === deliveryPackage?.id && styles.buttonDisabled]}
+                style={styles.cancelButtonSmall}
+                onPress={closeDeliveryModal}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButtonLarge, updatingStatusId === deliveryPackage?.id && styles.buttonDisabled]}
                 onPress={handleDeliverySubmit}
                 disabled={updatingStatusId === deliveryPackage?.id}
               >
@@ -981,7 +1482,7 @@ export function PackagesScreen() {
                   </>
                 )}
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1076,6 +1577,49 @@ export function PackagesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Delete Item Confirmation Modal */}
+      <Modal
+        visible={!!deletingItemId}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setDeletingItemId(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setDeletingItemId(null)}>
+          <Pressable style={styles.modalContentSmall} onPress={e => e.stopPropagation()}>
+            <View style={styles.deleteModalContent}>
+              <View style={styles.deleteIconContainer}>
+                <AlertCircle color="#EF4444" size={moderateScale(32)} />
+              </View>
+              <Text style={styles.deleteTitle}>Delete Item</Text>
+              <Text style={styles.deleteMessage}>
+                Are you sure you want to delete <Text style={styles.deleteItemName}>{deletingItemId?.itemName}</Text>? This action cannot be undone.
+              </Text>
+              <View style={styles.deleteActions}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => setDeletingItemId(null)}
+                  disabled={updatingItem === deletingItemId?.itemId}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmDeleteButton, updatingItem === deletingItemId?.itemId && styles.buttonDisabled]}
+                  onPress={confirmDeleteItem}
+                  disabled={updatingItem === deletingItemId?.itemId}
+                >
+                  {updatingItem === deletingItemId?.itemId ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.confirmDeleteButtonText}>Delete</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -1103,6 +1647,27 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(16),
     fontWeight: 'bold',
     color: '#1F2937',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: moderateScale(6),
+  },
+  headerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#14B8A6',
+    paddingHorizontal: moderateScale(10),
+    paddingVertical: moderateScale(6),
+    borderRadius: moderateScale(6),
+    gap: moderateScale(4),
+  },
+  headerButtonCreate: {
+    backgroundColor: '#14B8A6',
+  },
+  headerButtonText: {
+    fontSize: moderateScale(10),
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   // Alerts
   alertError: {
@@ -1399,6 +1964,9 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(8),
     gap: moderateScale(4),
   },
+  actionButtonExport: {
+    backgroundColor: '#6366F1',
+  },
   actionButtonDeliver: {
     backgroundColor: '#3B82F6',
   },
@@ -1525,13 +2093,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: moderateScale(8),
+  },
+  modalItemNameContainer: {
+    flex: 1,
+    marginRight: moderateScale(8),
   },
   modalItemName: {
-    flex: 1,
     fontSize: moderateScale(11),
     fontWeight: '600',
     color: '#1F2937',
-    marginRight: moderateScale(8),
   },
   modalItemPrice: {
     fontSize: moderateScale(11),
@@ -1542,16 +2113,78 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(10),
     color: '#6B7280',
     marginTop: moderateScale(2),
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
-  modalItemDetails: {
+  modalItemUnitsRow: {
     flexDirection: 'row',
     gap: moderateScale(12),
-    marginTop: moderateScale(6),
+    marginBottom: moderateScale(8),
   },
-  modalItemDetail: {
+  modalItemUnitGroup: {
+    flex: 1,
+  },
+  modalItemUnitLabel: {
     fontSize: moderateScale(9),
-    color: '#9CA3AF',
+    color: '#6B7280',
+    marginBottom: moderateScale(4),
+  },
+  modalItemUnitValue: {
+    fontSize: moderateScale(11),
+    color: '#374151',
+    fontWeight: '500',
+  },
+  modalItemUnitInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: moderateScale(6),
+    paddingHorizontal: moderateScale(8),
+    paddingVertical: moderateScale(6),
+    fontSize: moderateScale(11),
+    color: '#374151',
+  },
+  inputDisabled: {
+    backgroundColor: '#F3F4F6',
+    opacity: 0.6,
+  },
+  modalItemActions: {
+    flexDirection: 'row',
+    gap: moderateScale(8),
+    justifyContent: 'flex-end',
+  },
+  modalItemActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDFA',
+    borderWidth: 1,
+    borderColor: '#14B8A6',
+    paddingHorizontal: moderateScale(10),
+    paddingVertical: moderateScale(6),
+    borderRadius: moderateScale(6),
+    gap: moderateScale(4),
+  },
+  modalItemActionButtonCancel: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
+  },
+  modalItemActionButtonDelete: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  modalItemActionText: {
+    fontSize: moderateScale(10),
+    fontWeight: '600',
+    color: '#14B8A6',
+  },
+  modalItemActionTextCancel: {
+    color: '#6B7280',
+  },
+  modalItemActionTextDelete: {
+    color: '#EF4444',
+  },
+  deleteItemName: {
+    fontWeight: '600',
+    color: '#1F2937',
   },
   modalTotalSection: {
     flexDirection: 'row',
@@ -1713,10 +2346,27 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(8),
     alignItems: 'center',
   },
+  cancelButtonSmall: {
+    flex: 0.3,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: moderateScale(12),
+    borderRadius: moderateScale(8),
+    alignItems: 'center',
+  },
   cancelButtonText: {
     fontSize: moderateScale(12),
     fontWeight: '600',
     color: '#374151',
+  },
+  submitButtonLarge: {
+    flex: 0.7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#14B8A6',
+    paddingVertical: moderateScale(12),
+    borderRadius: moderateScale(8),
+    gap: moderateScale(6),
   },
   confirmDeleteButton: {
     flex: 1,
@@ -1729,5 +2379,26 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  // Delivery Modal - Fixed layout
+  modalContentDelivery: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: moderateScale(12),
+    width: '100%',
+    maxWidth: moderateScale(400),
+    maxHeight: '85%',
+    overflow: 'hidden',
+  },
+  modalBodyScrollable: {
+    paddingHorizontal: moderateScale(16),
+    paddingTop: moderateScale(16),
+    flexGrow: 1,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: moderateScale(16),
+    gap: moderateScale(12),
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
 });

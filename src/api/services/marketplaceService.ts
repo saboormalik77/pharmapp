@@ -122,6 +122,11 @@ export interface CartResponse {
   summary: CartSummary;
 }
 
+export interface CheckoutResponse {
+  url: string;
+  sessionId: string;
+}
+
 // ============================================================
 // Types - Orders
 // ============================================================
@@ -368,6 +373,26 @@ export const marketplaceService = {
       return response.data.order;
     }
     throw new Error(response.message || 'Failed to fetch order');
+  },
+
+  // ============================================================
+  // Checkout
+  // ============================================================
+
+  /**
+   * Create Stripe checkout session
+   * POST /marketplace/checkout
+   */
+  async createCheckoutSession(email: string, pharmacyName?: string, returnUrl?: string): Promise<CheckoutResponse> {
+    const response = await apiClient.post<CheckoutResponse>('/marketplace/checkout', {
+      email,
+      pharmacyName,
+      returnUrl,
+    });
+    if (response.status === 'success' && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || 'Failed to create checkout session');
   },
 };
 

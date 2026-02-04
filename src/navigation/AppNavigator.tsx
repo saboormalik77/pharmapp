@@ -17,6 +17,7 @@ import {
   LogOut,
   User,
   CreditCard,
+  BarChart3,
 } from 'lucide-react-native';
 
 import { useAuthStore } from '../store/authStore';
@@ -31,6 +32,7 @@ import { DocumentsScreen } from '../screens/DocumentsScreen';
 import { ProductsScreen } from '../screens/ProductsScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { PackagesScreen } from '../screens/PackagesScreen';
+import { PackageSuggestionsScreen } from '../screens/PackageSuggestionsScreen';
 import { MarketplaceScreen } from '../screens/MarketplaceScreen';
 import { OrdersScreen } from '../screens/OrdersScreen';
 import { OrderDetailScreen } from '../screens/OrderDetailScreen';
@@ -38,6 +40,7 @@ import { CartScreen } from '../screens/CartScreen';
 import { TopDistributorsScreen } from '../screens/TopDistributorsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { SubscriptionScreen } from '../screens/SubscriptionScreen';
+import { InventoryAnalysisScreen } from '../screens/InventoryAnalysisScreen';
 
 // Responsive helpers
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -58,6 +61,7 @@ export type RootStackParamList = {
   Products: undefined;
   Search: undefined;
   Packages: undefined;
+  PackageSuggestions: undefined;
   Marketplace: undefined;
   Orders: undefined;
   OrderDetail: { orderId: string };
@@ -65,6 +69,7 @@ export type RootStackParamList = {
   Settings: undefined;
   Subscription: undefined;
   Cart: undefined;
+  InventoryAnalysis: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -84,43 +89,46 @@ function CustomDrawerContent(props: any) {
   const badgeIconSize = 10;
 
   return (
-    <DrawerContentScrollView 
-      {...props} 
-      contentContainerStyle={styles.drawerContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* User Info Header */}
-      <View style={styles.drawerHeader}>
-        <View style={styles.drawerAvatarContainer}>
-          <View style={styles.drawerAvatar}>
-            <User color={TEAL_500} size={avatarIconSize} />
+    <View style={styles.drawerWrapper}>
+      <DrawerContentScrollView 
+        {...props} 
+        contentContainerStyle={styles.drawerContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* User Info Header */}
+        <View style={styles.drawerHeader}>
+          <View style={styles.drawerAvatarContainer}>
+            <View style={styles.drawerAvatar}>
+              <User color={TEAL_500} size={avatarIconSize} />
+            </View>
+          </View>
+          <View style={styles.drawerUserInfo}>
+            <Text style={styles.drawerUserName} numberOfLines={1}>
+              {user?.name || 'User'}
+            </Text>
+            <Text style={styles.drawerUserEmail} numberOfLines={1}>
+              {user?.email || 'user@example.com'}
+            </Text>
+            {user?.pharmacy_name && (
+              <View style={styles.pharmacyBadge}>
+                <Building2 color="#FFFFFF" size={badgeIconSize} />
+                <Text style={styles.drawerPharmacyName} numberOfLines={1}>
+                  {user.pharmacy_name}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
-        <View style={styles.drawerUserInfo}>
-          <Text style={styles.drawerUserName} numberOfLines={1}>
-            {user?.name || 'User'}
-          </Text>
-          <Text style={styles.drawerUserEmail} numberOfLines={1}>
-            {user?.email || 'user@example.com'}
-          </Text>
-          {user?.pharmacy_name && (
-            <View style={styles.pharmacyBadge}>
-              <Building2 color="#FFFFFF" size={badgeIconSize} />
-              <Text style={styles.drawerPharmacyName} numberOfLines={1}>
-                {user.pharmacy_name}
-              </Text>
-            </View>
-          )}
+
+        {/* Navigation Items - no flex to prevent stretching */}
+        <View style={styles.drawerItemsContainer}>
+          <Text style={styles.drawerSectionTitle}>MENU</Text>
+          <DrawerItemList {...props} />
         </View>
-      </View>
+      </DrawerContentScrollView>
 
-      {/* Navigation Items - no flex to prevent stretching */}
-      <View style={styles.drawerItemsContainer}>
-        <Text style={styles.drawerSectionTitle}>MENU</Text>
-        <DrawerItemList {...props} />
-      </View>
-
-      {/* Logout Button - at the bottom */}
+      {/* Logout Button - at the bottom, outside scroll view */}
       <View style={styles.drawerFooter}>
         <DrawerItem
           label="Logout"
@@ -133,7 +141,7 @@ function CustomDrawerContent(props: any) {
         />
         <Text style={styles.versionText}>Version 1.0.0</Text>
       </View>
-    </DrawerContentScrollView>
+    </View>
   );
 }
 
@@ -171,7 +179,20 @@ function TabNavigator() {
           fontWeight: '600',
           marginTop: moderateScale(2),
         },
-        headerShown: false,
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: TEAL_500,
+          elevation: 4,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.15,
+          shadowRadius: 4,
+        },
+        headerTintColor: '#FFFFFF',
+        headerTitleStyle: {
+          fontSize: 16,
+          fontWeight: '600',
+        },
       }}
     >
       <Tab.Screen
@@ -180,6 +201,7 @@ function TabNavigator() {
         options={{
           tabBarIcon: ({ color }) => <Home color={color} size={tabIconSize} />,
           tabBarLabel: 'Dashboard',
+          title: 'Dashboard',
         }}
       />
       <Tab.Screen
@@ -188,6 +210,7 @@ function TabNavigator() {
         options={{
           tabBarIcon: ({ color }) => <Store color={color} size={tabIconSize} />,
           tabBarLabel: 'Marketplace',
+          title: 'Marketplace',
         }}
       />
       <Tab.Screen
@@ -196,6 +219,7 @@ function TabNavigator() {
         options={{
           tabBarIcon: ({ color }) => <Search color={color} size={tabIconSize} />,
           tabBarLabel: 'Search',
+          title: 'Search',
         }}
       />
       <Tab.Screen
@@ -204,6 +228,7 @@ function TabNavigator() {
         options={{
           tabBarIcon: ({ color }) => <ShoppingBag color={color} size={tabIconSize} />,
           tabBarLabel: 'Orders',
+          title: 'Orders',
         }}
       />
       <Tab.Screen
@@ -212,6 +237,7 @@ function TabNavigator() {
         options={{
           tabBarIcon: ({ color }) => <Menu color={color} size={tabIconSize} />,
           tabBarLabel: 'More',
+          headerShown: false,
         }}
       />
     </Tab.Navigator>
@@ -323,6 +349,14 @@ function DrawerNavigatorContent() {
         }}
       />
       <Drawer.Screen
+        name="InventoryAnalysis"
+        component={InventoryAnalysisScreen}
+        options={{
+          drawerIcon: ({ color }) => <BarChart3 color={color} size={drawerIconSize} />,
+          title: 'Inventory Analysis',
+        }}
+      />
+      <Drawer.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
@@ -356,10 +390,60 @@ function AuthStack() {
 
 function MainStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false,
+      }}
+    >
       <Stack.Screen name="Main" component={TabNavigator} />
-      <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
-      <Stack.Screen name="Cart" component={CartScreen} />
+      <Stack.Screen 
+        name="OrderDetail" 
+        component={OrderDetailScreen}
+        options={{
+          headerShown: true,
+          title: 'Order Details',
+          headerStyle: {
+            backgroundColor: TEAL_500,
+          },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: {
+            fontSize: 16,
+            fontWeight: '600',
+          },
+        }}
+      />
+      <Stack.Screen 
+        name="Cart" 
+        component={CartScreen}
+        options={{
+          headerShown: true,
+          title: 'Shopping Cart',
+          headerStyle: {
+            backgroundColor: TEAL_500,
+          },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: {
+            fontSize: 16,
+            fontWeight: '600',
+          },
+        }}
+      />
+      <Stack.Screen 
+        name="PackageSuggestions" 
+        component={PackageSuggestionsScreen}
+        options={{
+          headerShown: true,
+          title: 'Package Suggestions',
+          headerStyle: {
+            backgroundColor: TEAL_500,
+          },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: {
+            fontSize: 16,
+            fontWeight: '600',
+          },
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -404,10 +488,14 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '500',
   },
+  drawerWrapper: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   drawerContent: {
     flexGrow: 1,
     backgroundColor: '#FFFFFF',
-    justifyContent: 'space-between',
+    paddingBottom: 0,
   },
   drawerHeader: {
     backgroundColor: TEAL_500,
@@ -479,7 +567,8 @@ const styles = StyleSheet.create({
     borderTopColor: '#F3F4F6',
     paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    marginTop: 8,
+    paddingHorizontal: 0,
+    backgroundColor: '#FFFFFF',
   },
   logoutItem: {
     marginHorizontal: 10,

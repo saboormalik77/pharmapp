@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -120,6 +121,22 @@ export function MarketplaceScreen({ navigation }: any) {
       loadDeals();
     }
   }, [sortBy, sortOrder, statusFilter, categoryFilter]);
+
+  // Refresh cart when screen comes into focus (e.g., when returning from cart screen)
+  useFocusEffect(
+    useCallback(() => {
+      const refreshCart = async () => {
+        try {
+          const cartData = await marketplaceService.getCart();
+          setCart(cartData);
+        } catch (err) {
+          // Silently fail if cart refresh fails
+          console.log('Failed to refresh cart:', err);
+        }
+      };
+      refreshCart();
+    }, [])
+  );
 
   const loadInitialData = async () => {
     try {

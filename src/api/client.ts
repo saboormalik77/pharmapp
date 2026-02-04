@@ -582,6 +582,71 @@ class ApiClient {
       } as ApiError;
     }
   }
+
+  /**
+   * Upload a file (multipart/form-data)
+   */
+  async uploadFile<T>(
+    endpoint: string,
+    formData: FormData,
+    includeAuth: boolean = true
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseURL}${endpoint}`;
+
+    this.log('UPLOAD', url, 'FormData');
+
+    try {
+      const headers: HeadersInit = {};
+      if (includeAuth) {
+        const token = await storage.getToken();
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      }
+      // Don't set Content-Type for FormData, browser/RN will set it with boundary
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const isAuthEndpoint = endpoint.includes('/auth/');
+        if (response.status === 401 && !isAuthEndpoint && includeAuth) {
+          const token = await storage.getToken();
+          if (token) {
+            const retryResponse = await this.handleTokenRefresh<T>(() =>
+              this.uploadFile<T>(endpoint, formData, includeAuth)
+            );
+            if (retryResponse) {
+              return retryResponse;
+            }
+          }
+        }
+
+        if ((response.status === 401 || response.status === 403) && !isAuthEndpoint && includeAuth) {
+          await storage.clearAll();
+        }
+
+        const error = await this.handleError(response);
+        this.log('UPLOAD', url, null, null, error);
+        throw error;
+      }
+
+      const data = await response.json();
+      this.log('UPLOAD', url, null, data);
+      return data;
+    } catch (error: any) {
+      if (error.status) {
+        throw error;
+      }
+      throw {
+        status: 500,
+        message: error.message || 'Network error occurred',
+      } as ApiError;
+    }
+  }
 }
 
 // Export singleton instance

@@ -172,17 +172,7 @@ export function OrdersScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#14B8A6', '#0D9488']}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Orders</Text>
-          <Text style={styles.headerSubtitle}>
-            {ordersData?.pagination?.total || 0} total orders
-          </Text>
-        </View>
-      </LinearGradient>
+      
 
       {/* Status filters commented out as per user request
       <ScrollView

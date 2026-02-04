@@ -51,6 +51,7 @@ export type {
   CartItem,
   CartSummary,
   CartResponse,
+  CheckoutResponse,
   OrderItem,
   Order,
   OrderSummary,
@@ -74,6 +75,13 @@ export type {
   PackageSuggestion,
   PackageSuggestionsResponse,
   CreateCustomPackageRequest,
+  OptimizationSuggestionItem,
+  OptimizationSuggestionProduct,
+  OptimizationSuggestionDistributor,
+  OptimizationSuggestionsResponse,
+  DistributorSuggestionProduct,
+  DistributorSuggestionPackage,
+  DistributorSuggestionResponse,
 } from './optimizationService';
 
 export { settingsService } from './settingsService';
@@ -94,8 +102,16 @@ export type {
 
 export { ndcSearchService } from './ndcSearchService';
 export type {
-  DistributorPricing as NDCDistributorPricing,
   NDCSearchResult,
   NDCSearchResponse,
   NDCIndexResponse,
 } from './ndcSearchService';
+
+export { inventoryAnalysisService } from './inventoryAnalysisService';
+export type {
+  DistributorLocation,
+  RecommendedDistributor,
+  AnalysisItem,
+  AnalysisSummary,
+  AnalysisResponse,
+} from './inventoryAnalysisService';

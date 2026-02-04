@@ -11,10 +11,10 @@ import {
   Alert,
   Dimensions,
   Image,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowLeft,
   ShoppingCart,
   Trash2,
   Plus,
@@ -35,6 +35,7 @@ import {
   CartSummary,
   CartResponse,
 } from '../api/services';
+import { useAuthStore } from '../store/authStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = (size: number) => (SCREEN_WIDTH / 375) * size;
@@ -67,7 +68,9 @@ export function CartScreen({ navigation }: Props) {
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const [removingItemId, setRemovingItemId] = useState<string | null>(null);
   const [clearingCart, setClearingCart] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
     loadCart();
@@ -164,17 +167,47 @@ export function CartScreen({ navigation }: Props) {
     );
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!cart || cart.items.length === 0) {
       Alert.alert('Empty Cart', 'Please add items to your cart before checkout');
       return;
     }
-    // For now, show a message. In production, this would redirect to a checkout/payment screen
-    Alert.alert(
-      'Checkout',
-      'Checkout with Stripe is only available in the web version. Please visit the web app to complete your purchase.',
-      [{ text: 'OK' }]
-    );
+
+    if (!user?.email) {
+      Alert.alert('Login Required', 'Please log in to continue with checkout');
+      return;
+    }
+
+    try {
+      setCheckingOut(true);
+      setError(null);
+
+      // Use deep link URL - backend should redirect to this after Stripe checkout
+      const returnUrl = 'pharmacollect://orders?checkout=success';
+      
+      const result = await marketplaceService.createCheckoutSession(
+        user.email,
+        user.pharmacy_name,
+        returnUrl
+      );
+
+      if (result.url) {
+        // Open Stripe checkout in browser
+        const supported = await Linking.canOpenURL(result.url);
+        if (supported) {
+          await Linking.openURL(result.url);
+        } else {
+          Alert.alert('Error', 'Cannot open checkout URL. Please try again.');
+        }
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to start checkout');
+      Alert.alert('Checkout Error', err.message || 'Failed to start checkout. Please try again.');
+    } finally {
+      setCheckingOut(false);
+    }
   };
 
   // Calculate safe values
@@ -200,30 +233,6 @@ export function CartScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBackButton} onPress={() => navigation.goBack()}>
-          <ArrowLeft color="#1F2937" size={moderateScale(22)} />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Shopping Cart</Text>
-          <Text style={styles.headerSubtitle}>{summary.itemCount} items</Text>
-        </View>
-        {cartItems.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={handleClearCart}
-            disabled={clearingCart}
-          >
-            {clearingCart ? (
-              <ActivityIndicator size="small" color="#EF4444" />
-            ) : (
-              <Trash2 color="#EF4444" size={moderateScale(18)} />
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
-
       {/* Error Banner */}
       {error && (
         <View style={styles.errorBanner}>
@@ -256,6 +265,7 @@ export function CartScreen({ navigation }: Props) {
         <>
           <ScrollView
             style={styles.content}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#14B8A6" />
@@ -412,11 +422,28 @@ export function CartScreen({ navigation }: Props) {
 
           {/* Fixed Checkout Button */}
           <View style={styles.checkoutContainer}>
-            <TouchableOpacity style={styles.checkoutButton} onPress={handleCheckout}>
-              <CreditCard color="#FFFFFF" size={moderateScale(18)} />
-              <Text style={styles.checkoutButtonText}>Checkout</Text>
-              <Text style={styles.checkoutTotal}>{formatCurrency(summary.total)}</Text>
-            </TouchableOpacity>
+            <View style={styles.checkoutButtonWrapper}>
+              <TouchableOpacity 
+                style={[styles.checkoutButton, checkingOut && styles.checkoutButtonDisabled]} 
+                onPress={handleCheckout}
+                disabled={checkingOut}
+              >
+                {checkingOut ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.checkoutButtonText}>Processing...</Text>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.checkoutButtonLeft}>
+                      <CreditCard color="#FFFFFF" size={moderateScale(20)} />
+                      <Text style={styles.checkoutButtonText}>Checkout</Text>
+                    </View>
+                    <Text style={styles.checkoutTotal}>{formatCurrency(summary.total)}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </>
       )}
@@ -438,42 +465,6 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(12),
     fontSize: moderateScale(12),
     color: '#6B7280',
-  },
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: moderateScale(12),
-    paddingVertical: moderateScale(12),
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerBackButton: {
-    width: moderateScale(40),
-    height: moderateScale(40),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    marginLeft: moderateScale(8),
-  },
-  headerTitle: {
-    fontSize: moderateScale(16),
-    fontWeight: 'bold',
-    color: '#1F2937',
-  },
-  headerSubtitle: {
-    fontSize: moderateScale(11),
-    color: '#6B7280',
-    marginTop: moderateScale(2),
-  },
-  clearButton: {
-    width: moderateScale(40),
-    height: moderateScale(40),
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   // Error Banner
   errorBanner: {
@@ -532,8 +523,10 @@ const styles = StyleSheet.create({
   // Content
   content: {
     flex: 1,
-    padding: moderateScale(12),
-    paddingTop: moderateScale(16),
+  },
+  scrollContent: {
+    paddingHorizontal: moderateScale(12),
+    paddingTop: moderateScale(12),
     paddingBottom: moderateScale(100), // Extra padding for bottom tab bar
   },
   itemsSection: {
@@ -801,34 +794,50 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
-    padding: moderateScale(16),
+    paddingHorizontal: moderateScale(16),
+    paddingTop: moderateScale(12),
+    paddingBottom: moderateScale(24),
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
-    paddingBottom: moderateScale(24),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  checkoutButtonWrapper: {
+    width: '100%',
   },
   checkoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#14B8A6',
     paddingVertical: moderateScale(16),
+    paddingHorizontal: moderateScale(20),
     borderRadius: moderateScale(12),
-    gap: moderateScale(10),
     shadowColor: '#14B8A6',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
+  checkoutButtonDisabled: {
+    opacity: 0.7,
+  },
+  checkoutButtonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: moderateScale(10),
+  },
   checkoutButtonText: {
     color: '#FFFFFF',
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(16),
     fontWeight: '600',
-    flex: 1,
   },
   checkoutTotal: {
     color: '#FFFFFF',
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(18),
     fontWeight: 'bold',
   },
 });

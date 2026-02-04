@@ -124,6 +124,101 @@ export interface CreateCustomPackageRequest {
   feeDuration?: number | null;
 }
 
+export interface OptimizationSuggestionItem {
+  ndc: string;
+  full?: number;
+  partial?: number;
+  productId?: string;
+}
+
+export interface OptimizationSuggestionProduct {
+  ndc: string;
+  productName: string;
+  quantity: number;
+  pricePerUnit: number;
+  totalEstimatedValue: number;
+  full_units?: number;
+  partial_units?: number;
+}
+
+export interface OptimizationSuggestionDistributor {
+  distributorName: string;
+  distributorId?: string;
+  products: OptimizationSuggestionProduct[];
+  totalItems: number;
+  totalEstimatedValue: number;
+  ndcsCount: number;
+  distributorContact?: {
+    email?: string;
+    phone?: string;
+    location?: string;
+    feeRates?: {
+      [key: string]: {
+        percentage: number;
+        reportDate: string;
+      };
+    };
+  };
+}
+
+export interface OptimizationSuggestionsResponse {
+  distributors: OptimizationSuggestionDistributor[];
+  ndcsWithoutDistributors: string[];
+  totalItems: number;
+  totalDistributors: number;
+  totalEstimatedValue: number;
+  generatedAt: string;
+}
+
+export interface DistributorSuggestionProduct {
+  ndc: string;
+  productId: string;
+  productName: string;
+  full: number;
+  partial: number;
+  pricePerUnit: number;
+  totalValue: number;
+}
+
+export interface DistributorSuggestionPackage {
+  distributorName: string;
+  distributorId: string;
+  distributorContact: {
+    email: string;
+    phone: string;
+    location: string;
+    feeRates?: Record<string, any>;
+  };
+  products: DistributorSuggestionProduct[];
+  totalItems: number;
+  totalEstimatedValue: number;
+  averagePricePerUnit: number;
+  alreadyCreated: boolean;
+  existingPackage?: {
+    id: string;
+    packageNumber: string;
+    totalItems: number;
+    totalEstimatedValue: number;
+    feeRate?: number;
+    feeDuration?: number;
+    createdAt: string;
+  };
+}
+
+export interface DistributorSuggestionResponse {
+  packages: DistributorSuggestionPackage[];
+  totalProducts: number;
+  totalPackages: number;
+  totalEstimatedValue: number;
+  generatedAt: string;
+  summary: {
+    productsWithPricing: number;
+    productsWithoutPricing: number;
+    distributorsUsed: number;
+    packagesAlreadyCreated: number;
+  };
+}
+
 export const optimizationService = {
   /**
    * Get optimization recommendations
@@ -179,6 +274,20 @@ export const optimizationService = {
   },
 
   /**
+   * Get optimization suggestions based on selected NDCs and quantities
+   */
+  async getSuggestions(items: OptimizationSuggestionItem[]): Promise<OptimizationSuggestionsResponse> {
+    const response = await apiClient.post<OptimizationSuggestionsResponse>(
+      '/optimization/suggestions',
+      { items }
+    );
+    if (response.status === 'success' && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || 'Failed to fetch optimization suggestions');
+  },
+
+  /**
    * Get package suggestions for products
    */
   async getPackageSuggestions(items: Array<{
@@ -196,6 +305,26 @@ export const optimizationService = {
       return response.data;
     }
     throw new Error(response.message || 'Failed to fetch package suggestions');
+  },
+
+  /**
+   * Get distributor suggestion for selected items
+   */
+  async getDistributorSuggestion(distributorId: string, items: Array<{
+    ndc: string;
+    productId: string;
+    productName: string;
+    full: number;
+    partial: number;
+  }>): Promise<DistributorSuggestionResponse> {
+    const response = await apiClient.post<DistributorSuggestionResponse>(
+      '/optimization/packages/distributor-suggestion',
+      { distributorId, items }
+    );
+    if (response.status === 'success' && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || 'Failed to fetch distributor suggestion');
   },
 
   /**
@@ -224,6 +353,40 @@ export const optimizationService = {
       return response.data || response;
     }
     throw new Error(response.message || 'Failed to add items to package');
+  },
+
+  /**
+   * Update a package item
+   */
+  async updatePackageItem(packageId: string, itemId: string, itemData: {
+    ndc: string;
+    productName: string;
+    full: number;
+    partial: number;
+    pricePerUnit: number;
+    totalValue: number;
+  }): Promise<any> {
+    const response = await apiClient.patch<any>(
+      `/optimization/custom-packages/${packageId}/items/${itemId}`,
+      itemData
+    );
+    if (response.status === 'success') {
+      return response.data || response;
+    }
+    throw new Error(response.message || 'Failed to update package item');
+  },
+
+  /**
+   * Delete a package item
+   */
+  async deletePackageItem(packageId: string, itemId: string): Promise<any> {
+    const response = await apiClient.delete<any>(
+      `/optimization/custom-packages/${packageId}/items/${itemId}`
+    );
+    if (response.status === 'success') {
+      return response.data || response;
+    }
+    throw new Error(response.message || 'Failed to delete package item');
   },
 };
 

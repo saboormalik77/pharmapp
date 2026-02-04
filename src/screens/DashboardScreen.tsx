@@ -449,23 +449,7 @@ export function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#14B8A6', '#0D9488']}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.greeting}>Welcome back,</Text>
-            <Text style={styles.userName}>{user?.name || 'User'}</Text>
-          </View>
-          {/* Notification icon commented out as per user request
-          <TouchableOpacity style={styles.notificationButton}>
-            <Bell color="#FFFFFF" size={moderateScale(22)} />
-            <View style={styles.notificationBadge} />
-          </TouchableOpacity>
-          */}
-        </View>
-      </LinearGradient>
+      
 
       <ScrollView
         style={styles.content}
@@ -737,7 +721,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: moderateScale(12),
     padding: moderateScale(12),
-    marginBottom: moderateScale(12),
+    marginBottom: moderateScale(20),
     borderWidth: 2,
     borderColor: '#99F6E4',
   },
