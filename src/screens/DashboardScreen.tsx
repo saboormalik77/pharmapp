@@ -83,6 +83,10 @@ export function DashboardScreen() {
   const [estimationPeriodsInput, setEstimationPeriodsInput] = useState('12');
   const [showEstimationDropdown, setShowEstimationDropdown] = useState(false);
   
+  // Selected point for earnings estimation chart
+  const [selectedPoint, setSelectedPoint] = useState<{ label: string; actual: number; potential: number } | null>(null);
+  const [showPointModal, setShowPointModal] = useState(false);
+  
   const user = useAuthStore((state) => state.user);
 
   const maxHistoryPeriods = historyPeriodType === 'monthly' ? 12 : 10;
@@ -322,7 +326,13 @@ export function DashboardScreen() {
   };
 
   // Line Chart Component - for Earnings Estimation
-  const LineChart = ({ data }: { data: { label: string; actual: number; potential: number }[] }) => {
+  const LineChart = ({ 
+    data, 
+    onPointPress 
+  }: { 
+    data: { label: string; actual: number; potential: number }[];
+    onPointPress?: (point: { label: string; actual: number; potential: number }, index: number) => void;
+  }) => {
     const allValues = data.flatMap(d => [d.actual, d.potential]);
     const maxValue = Math.max(...allValues, 1);
     const chartHeight = moderateScale(140);
@@ -366,7 +376,7 @@ export function DashboardScreen() {
               />
             );
           })}
-          {/* Points */}
+          {/* Points - non-clickable, just visual */}
           {values.map((value, index) => (
             <View
               key={`point-${index}`}
@@ -410,6 +420,36 @@ export function DashboardScreen() {
             
             {/* Potential Earnings Line */}
             {renderLine(data.map(d => d.potential), '#F59E0B')}
+            
+            {/* Clickable Points Layer - individual clickable areas for each data point */}
+            {data.map((item, index) => {
+              const actualY = getY(item.actual);
+              const potentialY = getY(item.potential);
+              const x = index * pointSpacing;
+              const minY = Math.min(actualY, potentialY);
+              const maxY = Math.max(actualY, potentialY);
+              
+              return (
+                <TouchableOpacity
+                  key={`clickable-point-${index}`}
+                  style={[
+                    styles.clickablePointArea,
+                    {
+                      left: x - moderateScale(15),
+                      top: minY - moderateScale(15),
+                      width: moderateScale(30),
+                      height: (maxY - minY) + moderateScale(30),
+                    }
+                  ]}
+                  onPress={() => {
+                    if (onPointPress) {
+                      onPointPress(item, index);
+                    }
+                  }}
+                  activeOpacity={0.5}
+                />
+              );
+            })}
             
             {/* X-Axis Labels */}
             <View style={styles.xAxisLabels}>
@@ -617,6 +657,10 @@ export function DashboardScreen() {
                 actual: item.actualEarnings,
                 potential: item.potentialEarnings,
               }))}
+              onPointPress={(point) => {
+                setSelectedPoint(point);
+                setShowPointModal(true);
+              }}
             />
           ) : (
             <Text style={styles.noDataText}>No estimation data available</Text>
@@ -624,6 +668,73 @@ export function DashboardScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Point Details Modal */}
+      <Modal
+        visible={showPointModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPointModal(false)}
+      >
+        <Pressable 
+          style={styles.pointModalOverlay} 
+          onPress={() => setShowPointModal(false)}
+        >
+          <Pressable 
+            style={styles.pointModalContent} 
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.pointModalHeader}>
+              <Text style={styles.pointModalTitle}>Earnings Details</Text>
+              <TouchableOpacity 
+                onPress={() => setShowPointModal(false)}
+                style={styles.pointModalCloseButton}
+              >
+                <XCircle color="#6B7280" size={moderateScale(20)} />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedPoint && (
+              <View style={styles.pointModalBody}>
+                <Text style={styles.pointModalPeriod}>{selectedPoint.label}</Text>
+                
+                <View style={styles.pointModalValues}>
+                  <View style={styles.pointModalValueItem}>
+                    <View style={[styles.pointModalValueDot, { backgroundColor: '#14B8A6' }]} />
+                    <View style={styles.pointModalValueContent}>
+                      <Text style={styles.pointModalValueLabel}>Actual Earnings</Text>
+                      <Text style={[styles.pointModalValueAmount, { color: '#14B8A6' }]}>
+                        {formatCurrencyFull(selectedPoint.actual)}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.pointModalValueItem}>
+                    <View style={[styles.pointModalValueDot, { backgroundColor: '#F59E0B' }]} />
+                    <View style={styles.pointModalValueContent}>
+                      <Text style={styles.pointModalValueLabel}>Potential Earnings</Text>
+                      <Text style={[styles.pointModalValueAmount, { color: '#F59E0B' }]}>
+                        {formatCurrencyFull(selectedPoint.potential)}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.pointModalDifference}>
+                    <Text style={styles.pointModalDifferenceLabel}>Difference</Text>
+                    <Text style={[
+                      styles.pointModalDifferenceAmount,
+                      { color: selectedPoint.potential - selectedPoint.actual >= 0 ? '#10B981' : '#EF4444' }
+                    ]}>
+                      {selectedPoint.potential - selectedPoint.actual >= 0 ? '+' : ''}
+                      {formatCurrencyFull(selectedPoint.potential - selectedPoint.actual)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -922,5 +1033,96 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: moderateScale(11),
     paddingVertical: moderateScale(40),
+  },
+  clickablePointArea: {
+    position: 'absolute',
+    zIndex: 10,
+  },
+  pointModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: moderateScale(20),
+  },
+  pointModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: moderateScale(16),
+    width: '100%',
+    maxWidth: moderateScale(400),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  pointModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: moderateScale(16),
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  pointModalTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  pointModalCloseButton: {
+    padding: moderateScale(4),
+  },
+  pointModalBody: {
+    padding: moderateScale(20),
+  },
+  pointModalPeriod: {
+    fontSize: moderateScale(16),
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: moderateScale(20),
+    textAlign: 'center',
+  },
+  pointModalValues: {
+    gap: moderateScale(16),
+  },
+  pointModalValueItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: moderateScale(12),
+  },
+  pointModalValueDot: {
+    width: moderateScale(12),
+    height: moderateScale(12),
+    borderRadius: moderateScale(6),
+  },
+  pointModalValueContent: {
+    flex: 1,
+  },
+  pointModalValueLabel: {
+    fontSize: moderateScale(12),
+    color: '#6B7280',
+    marginBottom: moderateScale(4),
+  },
+  pointModalValueAmount: {
+    fontSize: moderateScale(18),
+    fontWeight: 'bold',
+  },
+  pointModalDifference: {
+    marginTop: moderateScale(12),
+    paddingTop: moderateScale(16),
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pointModalDifferenceLabel: {
+    fontSize: moderateScale(14),
+    fontWeight: '600',
+    color: '#374151',
+  },
+  pointModalDifferenceAmount: {
+    fontSize: moderateScale(16),
+    fontWeight: 'bold',
   },
 });

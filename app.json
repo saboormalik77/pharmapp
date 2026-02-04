@@ -16,14 +16,20 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pharmanalytics.mobile"
+      "bundleIdentifier": "com.pharmanalytics.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to your camera to scan barcodes for product entry."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#14B8A6"
       },
-      "package": "com.pharmanalytics.mobile"
+      "package": "com.pharmanalytics.mobile",
+      "permissions": [
+        "CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -34,7 +40,13 @@
       }
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan barcodes."
+        }
+      ]
     ]
   }
 }

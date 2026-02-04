@@ -329,7 +329,7 @@ export function InventoryAnalysisScreen() {
         >
           <View style={styles.headerContent}>
             <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>Inventory Analysis</Text>
+              <Text style={styles.headerTitle}> Analysis</Text>
               <Text style={styles.headerSubtitle}>
                 Upload inventory to analyze return opportunities
               </Text>

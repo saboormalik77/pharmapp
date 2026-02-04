@@ -17,6 +17,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   Package,
   Search,
@@ -29,7 +30,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  Camera,
+  Camera as CameraIcon,
   Keyboard as KeyboardIcon,
   ArrowLeft,
   Calendar,
@@ -107,6 +108,10 @@ export function ProductsScreen() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [entryMode, setEntryMode] = useState<'initial' | 'scan' | 'manual'>('initial');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  
+  // Camera state
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   // Form fields
   const [ndcInput, setNdcInput] = useState('');
@@ -271,6 +276,7 @@ export function ProductsScreen() {
 
   const closeModal = () => {
     setIsModalOpen(false);
+    setShowCamera(false);
     resetForm();
     setError(null);
   };
@@ -769,17 +775,31 @@ export function ProductsScreen() {
                 <View style={styles.initialModeContainer}>
                   <TouchableOpacity
                     style={styles.entryModeButton}
-                    onPress={() => {
-                      // For mobile, we'll go directly to manual for now
-                      // Camera scanning can be added later with expo-barcode-scanner
-                      Alert.alert(
-                        'Barcode Scanning',
-                        'Barcode scanning is coming soon! Please use manual entry for now.',
-                        [{ text: 'OK', onPress: () => setEntryMode('manual') }]
-                      );
+                    onPress={async () => {
+                      // Check camera permissions
+                      if (!cameraPermission) {
+                        // Permission is still loading
+                        return;
+                      }
+                      
+                      if (!cameraPermission.granted) {
+                        // Request permission
+                        const { granted } = await requestCameraPermission();
+                        if (!granted) {
+                          Alert.alert(
+                            'Camera Permission Required',
+                            'Please allow camera access to scan barcodes.',
+                            [{ text: 'OK' }]
+                          );
+                          return;
+                        }
+                      }
+                      
+                      // Open camera
+                      setShowCamera(true);
                     }}
                   >
-                    <Camera color="#FFFFFF" size={moderateScale(16)} />
+                    <CameraIcon color="#FFFFFF" size={moderateScale(16)} />
                     <Text style={styles.entryModeButtonText}>Scan Barcode</Text>
                   </TouchableOpacity>
 
@@ -1048,6 +1068,46 @@ export function ProductsScreen() {
             </View>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Camera Modal */}
+      <Modal
+        visible={showCamera}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => {
+          setShowCamera(false);
+          setEntryMode('initial');
+        }}
+      >
+        <View style={styles.cameraContainer}>
+          <CameraView
+            style={styles.camera}
+            facing="back"
+          >
+            <View style={styles.cameraHeader}>
+              <TouchableOpacity
+                style={styles.cameraCloseButton}
+                onPress={() => {
+                  setShowCamera(false);
+                  setEntryMode('initial');
+                }}
+              >
+                <X color="#FFFFFF" size={moderateScale(24)} />
+              </TouchableOpacity>
+              <Text style={styles.cameraTitle}>Scan Barcode</Text>
+              <View style={styles.cameraPlaceholder} />
+            </View>
+            <View style={styles.cameraFooter}>
+              <Text style={styles.cameraHint}>
+                Point your camera at a barcode to scan
+              </Text>
+              <Text style={styles.cameraNote}>
+                Barcode scanning functionality coming soon
+              </Text>
+            </View>
+          </CameraView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1696,5 +1756,59 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: moderateScale(50),
+    paddingHorizontal: moderateScale(20),
+    paddingBottom: moderateScale(20),
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  cameraCloseButton: {
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  cameraPlaceholder: {
+    width: moderateScale(40),
+  },
+  cameraFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: moderateScale(40),
+    paddingHorizontal: moderateScale(20),
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingTop: moderateScale(20),
+  },
+  cameraHint: {
+    fontSize: moderateScale(14),
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: moderateScale(8),
+  },
+  cameraNote: {
+    fontSize: moderateScale(12),
+    color: '#9CA3AF',
+    textAlign: 'center',
   },
 });

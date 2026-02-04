@@ -34,7 +34,7 @@ import {
   Hash,
   Zap,
 } from 'lucide-react-native';
-import { Recommendation, OptimizationRecommendations } from '../api/services';
+import { Recommendation, OptimizationRecommendations, AlternativeDistributor } from '../api/services';
 import { useNDCSearch, NDCPricingData } from '../hooks/useNDCSearch';
 import { getNDCByCode } from '../store/ndcCacheStore';
 
@@ -318,34 +318,39 @@ export function SearchScreen({ navigation }: any) {
             productName: cachedData.productName || `Product ${cachedData.ndc}`,
             quantity: 1,
             recommendedDistributor: bestDistributor.name || '',
-            recommendedDistributorId: bestDistributor.id,
-            recommendedDistributorContact: {
-              email: bestDistributor.email,
-              phone: bestDistributor.phone,
-              location: bestDistributor.location,
-            },
             expectedPrice,
             worstPrice,
-            // These are from BEST distributor (matching backend)
-            fullPricePerUnit,
-            partialPricePerUnit,
-            alternativeDistributors: alternativeDistributors.map(dist => ({
-              id: dist.id,
-              name: dist.name,
-              // Main price for this distributor
-              price: dist.price,
-              // Individual full/partial prices
-              fullPrice: dist.fullPrice,
-              partialPrice: dist.partialPrice,
-              // Difference from best price
-              difference: dist.price - expectedPrice,
-              email: dist.email,
-              phone: dist.phone,
-              location: dist.location,
-            })),
+            alternativeDistributors: alternativeDistributors.map(dist => {
+              const altDist: AlternativeDistributor = {
+                name: dist.name,
+                // Main price for this distributor
+                price: dist.price,
+                // Difference from best price
+                difference: dist.price - expectedPrice,
+                available: true,
+              };
+              // Add additional properties for internal use (not in type definition)
+              (altDist as any).fullPrice = dist.fullPrice;
+              (altDist as any).partialPrice = dist.partialPrice;
+              (altDist as any).id = dist.id;
+              (altDist as any).email = dist.email;
+              (altDist as any).phone = dist.phone;
+              (altDist as any).location = dist.location;
+              return altDist;
+            }),
             savings,
             available: true,
           };
+          
+          // Add additional properties as any to match usage in getDisplayedData
+          (recommendation as any).recommendedDistributorId = bestDistributor.id;
+          (recommendation as any).recommendedDistributorContact = {
+            email: bestDistributor.email,
+            phone: bestDistributor.phone,
+            location: bestDistributor.location,
+          };
+          (recommendation as any).fullPricePerUnit = fullPricePerUnit;
+          (recommendation as any).partialPricePerUnit = partialPricePerUnit;
 
           recommendations.push(recommendation);
         } else {
@@ -370,6 +375,16 @@ export function SearchScreen({ navigation }: any) {
         recommendations,
         totalPotentialSavings: recommendations.reduce((sum, r) => sum + r.savings, 0),
         generatedAt: new Date().toISOString(),
+        distributorUsage: {
+          usedThisMonth: recommendations.length,
+          totalDistributors: recommendations.reduce((sum, r) => sum + r.alternativeDistributors.length + 1, 0),
+          stillAvailable: recommendations.reduce((sum, r) => sum + r.alternativeDistributors.filter(alt => alt.available).length + (r.available ? 1 : 0), 0),
+        },
+        earningsComparison: {
+          singleDistributorStrategy: recommendations.reduce((sum, r) => sum + r.worstPrice, 0),
+          multipleDistributorsStrategy: recommendations.reduce((sum, r) => sum + r.expectedPrice, 0),
+          potentialAdditionalEarnings: recommendations.reduce((sum, r) => sum + r.savings, 0),
+        },
       };
       
       setRecommendation(data);
@@ -606,22 +621,6 @@ export function SearchScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <LinearGradient
-        colors={['#F0FDFA', '#CCFBF1', '#F0FDFA']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Search Recommendations</Text>
-          {cacheStats.uniqueNdcs > 0 && (
-            <View style={styles.cacheIndicator}>
-              <Zap color="#14B8A6" size={moderateScale(10)} />
-              <Text style={styles.cacheText}>Instant</Text>
-            </View>
-          )}
-        </View>
-      </LinearGradient>
 
       {/* Alerts */}
       {error && (
