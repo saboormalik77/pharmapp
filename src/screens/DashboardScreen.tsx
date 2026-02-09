@@ -96,9 +96,15 @@ export function DashboardScreen() {
     try {
       setLoading(true);
       const data = await dashboardService.getSummary();
-      setSummary(data);
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
+      // Only set data if summary is not null (token refresh might have failed silently)
+      if (data) {
+        setSummary(data);
+      }
+    } catch (error: any) {
+      // Only log non-401 errors (401 errors are handled by token refresh)
+      if (error?.status !== 401) {
+        console.error('Failed to fetch dashboard data:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -111,9 +117,15 @@ export function DashboardScreen() {
         periodType: historyPeriodType,
         periods: historyPeriods,
       });
-      setEarningsData(history);
-    } catch (error) {
-      console.error('Failed to fetch earnings history:', error);
+      // Only set data if history is not null (token refresh might have failed silently)
+      if (history) {
+        setEarningsData(history);
+      }
+    } catch (error: any) {
+      // Only log non-401 errors (401 errors are handled by token refresh)
+      if (error?.status !== 401) {
+        console.error('Failed to fetch earnings history:', error);
+      }
     } finally {
       setEarningsLoading(false);
     }
@@ -126,9 +138,15 @@ export function DashboardScreen() {
         periodType: estimationPeriodType,
         periods: estimationPeriods,
       });
-      setEarningsEstimation(estimation);
-    } catch (error) {
-      console.error('Failed to fetch earnings estimation:', error);
+      // Only set data if estimation is not null (token refresh might have failed silently)
+      if (estimation) {
+        setEarningsEstimation(estimation);
+      }
+    } catch (error: any) {
+      // Only log non-401 errors (401 errors are handled by token refresh)
+      if (error?.status !== 401) {
+        console.error('Failed to fetch earnings estimation:', error);
+      }
     } finally {
       setEstimationLoading(false);
     }

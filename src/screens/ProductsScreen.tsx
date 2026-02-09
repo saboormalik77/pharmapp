@@ -15,7 +15,9 @@ import {
   Dimensions,
   Switch,
   Keyboard,
+  Platform,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
@@ -121,7 +123,8 @@ export function ProductsScreen() {
   const [fullUnits, setFullUnits] = useState(0);
   const [partialUnits, setPartialUnits] = useState(0);
   const [lotNumber, setLotNumber] = useState('');
-  const [expirationDate, setExpirationDate] = useState('');
+  const [expirationDate, setExpirationDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
   const [lotNumberError, setLotNumberError] = useState<string | null>(null);
   const [ndcLookupSuccess, setNdcLookupSuccess] = useState(false);
@@ -266,7 +269,8 @@ export function ProductsScreen() {
     setFullUnits(0);
     setPartialUnits(0);
     setLotNumber('');
-    setExpirationDate('');
+    setExpirationDate(null);
+    setShowDatePicker(false);
     setNotes('');
     setLotNumberError(null);
     setNdcLookupSuccess(false);
@@ -277,6 +281,7 @@ export function ProductsScreen() {
   const closeModal = () => {
     setIsModalOpen(false);
     setShowCamera(false);
+    setShowDatePicker(false);
     resetForm();
     setError(null);
   };
@@ -301,7 +306,17 @@ export function ProductsScreen() {
     setFullUnits(product.full_units);
     setPartialUnits(product.partial_units);
     setLotNumber(product.lotNumber || '');
-    setExpirationDate(product.expirationDate || '');
+    // Parse expiration date string to Date object
+    if (product.expirationDate) {
+      try {
+        const date = new Date(product.expirationDate);
+        setExpirationDate(isNaN(date.getTime()) ? null : date);
+      } catch {
+        setExpirationDate(null);
+      }
+    } else {
+      setExpirationDate(null);
+    }
     setNotes(product.notes || '');
     setNdcLookupSuccess(true);
     setEntryMode('manual');
@@ -327,8 +342,8 @@ export function ProductsScreen() {
     }
     setLotNumberError(null);
 
-    if (!expirationDate.trim()) {
-      setError('Please enter an expiration date');
+    if (!expirationDate) {
+      setError('Please select an expiration date');
       return;
     }
 
@@ -354,13 +369,16 @@ export function ProductsScreen() {
       const finalFullUnits = isFullChecked ? fullUnits : 0;
       const finalPartialUnits = isPartialChecked ? partialUnits : 0;
 
+      // Format date as YYYY-MM-DD
+      const formattedDate = expirationDate.toISOString().split('T')[0];
+
       const payload = {
         ndc: ndcInput.trim(),
         product_name: productName.trim(),
         full_units: finalFullUnits,
         partial_units: finalPartialUnits,
         lot_number: lotNumber.trim(),
-        expiration_date: expirationDate.trim(),
+        expiration_date: formattedDate,
         notes: notes.trim() || undefined,
       };
 
@@ -769,7 +787,12 @@ export function ProductsScreen() {
               </View>
             )}
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.modalBody} 
+              contentContainerStyle={styles.modalBodyContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Initial Mode - Choose Entry Method */}
               {entryMode === 'initial' && !editingProductId && (
                 <View style={styles.initialModeContainer}>
@@ -967,14 +990,57 @@ export function ProductsScreen() {
                       {/* Expiration Date */}
                       <View style={styles.formGroup}>
                         <Text style={styles.formLabel}>Expiration Date *</Text>
-                        <TextInput
-                          style={styles.formInput}
-                          value={expirationDate}
-                          onChangeText={setExpirationDate}
-                          placeholder="YYYY-MM-DD"
-                          placeholderTextColor="#9CA3AF"
-                        />
-                        <Text style={styles.formHint}>Format: YYYY-MM-DD (e.g., 2025-12-31)</Text>
+                        <TouchableOpacity
+                          style={styles.datePickerButton}
+                          onPress={() => setShowDatePicker(true)}
+                        >
+                          <Calendar color="#6B7280" size={moderateScale(16)} />
+                          {expirationDate ? (
+                            <Text style={styles.datePickerText}>
+                              {expirationDate.toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </Text>
+                          ) : (
+                            <Text style={styles.datePickerPlaceholder}>
+                              Select expiration date
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                        {showDatePicker && (
+                          <DateTimePicker
+                            value={expirationDate || new Date()}
+                            mode="date"
+                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                            onChange={(event: DateTimePickerEvent, selectedDate?: Date) => {
+                              if (Platform.OS === 'android') {
+                                setShowDatePicker(false);
+                                if (event.type === 'set' && selectedDate) {
+                                  setExpirationDate(selectedDate);
+                                }
+                              } else {
+                                // iOS
+                                if (event.type === 'set' && selectedDate) {
+                                  setExpirationDate(selectedDate);
+                                }
+                                // On iOS, keep picker open until user taps done/cancel
+                                // The picker will be closed when user interacts with it
+                              }
+                            }}
+                          />
+                        )}
+                        {Platform.OS === 'ios' && showDatePicker && (
+                          <View style={styles.iosDatePickerActions}>
+                            <TouchableOpacity
+                              style={styles.iosDatePickerButton}
+                              onPress={() => setShowDatePicker(false)}
+                            >
+                              <Text style={styles.iosDatePickerButtonText}>Done</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
                       </View>
 
                       {/* Notes */}
@@ -990,47 +1056,49 @@ export function ProductsScreen() {
                           numberOfLines={3}
                         />
                       </View>
-
-                      {/* Action Buttons */}
-                      <View style={styles.formActions}>
-                        <TouchableOpacity
-                          style={[styles.saveButton, savingProduct && styles.buttonDisabled]}
-                          onPress={handleSaveProduct}
-                          disabled={savingProduct}
-                        >
-                          {savingProduct ? (
-                            <>
-                              <ActivityIndicator size="small" color="#FFFFFF" />
-                              <Text style={styles.saveButtonText}>
-                                {editingProductId ? 'Updating...' : 'Adding...'}
-                              </Text>
-                            </>
-                          ) : (
-                            <>
-                              {editingProductId ? (
-                                <Edit3 color="#FFFFFF" size={moderateScale(14)} />
-                              ) : (
-                                <Plus color="#FFFFFF" size={moderateScale(14)} />
-                              )}
-                              <Text style={styles.saveButtonText}>
-                                {editingProductId ? 'Update Product' : 'Add Product'}
-                              </Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.clearButton}
-                          onPress={resetForm}
-                        >
-                          <Text style={styles.clearButtonText}>Clear</Text>
-                        </TouchableOpacity>
-                      </View>
                     </>
                   )}
                 </View>
               )}
             </ScrollView>
+
+            {/* Action Buttons - Fixed at bottom outside ScrollView */}
+            {(entryMode === 'manual' || editingProductId) && (ndcLookupSuccess || productName.trim() || editingProductId) && (
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  style={[styles.saveButton, savingProduct && styles.buttonDisabled]}
+                  onPress={handleSaveProduct}
+                  disabled={savingProduct}
+                >
+                  {savingProduct ? (
+                    <>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={styles.saveButtonText}>
+                        {editingProductId ? 'Updating...' : 'Adding...'}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      {editingProductId ? (
+                        <Edit3 color="#FFFFFF" size={moderateScale(14)} />
+                      ) : (
+                        <Plus color="#FFFFFF" size={moderateScale(14)} />
+                      )}
+                      <Text style={styles.saveButtonText}>
+                        {editingProductId ? 'Update Product' : 'Add Product'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.clearButton}
+                  onPress={resetForm}
+                >
+                  <Text style={styles.clearButtonText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -1500,6 +1568,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: moderateScale(400),
     maxHeight: '90%',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    justifyContent: 'flex-start',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1538,8 +1609,20 @@ const styles = StyleSheet.create({
     color: '#991B1B',
   },
   modalBody: {
+    flexShrink: 1,
+    flexGrow: 1,
+  },
+  modalBodyContent: {
     padding: moderateScale(16),
-    maxHeight: '80%',
+    paddingBottom: moderateScale(16),
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: moderateScale(12),
+    padding: moderateScale(16),
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   // Initial Mode
   initialModeContainer: {
@@ -1610,6 +1693,44 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(10),
     color: '#9CA3AF',
   },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: moderateScale(8),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: moderateScale(12),
+    gap: moderateScale(8),
+  },
+  datePickerText: {
+    flex: 1,
+    fontSize: moderateScale(12),
+    color: '#374151',
+    fontWeight: '500',
+  },
+  datePickerPlaceholder: {
+    flex: 1,
+    fontSize: moderateScale(12),
+    color: '#9CA3AF',
+  },
+  iosDatePickerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingTop: moderateScale(8),
+  },
+  iosDatePickerButton: {
+    paddingVertical: moderateScale(8),
+    paddingHorizontal: moderateScale(16),
+    backgroundColor: '#14B8A6',
+    borderRadius: moderateScale(6),
+  },
+  iosDatePickerButtonText: {
+    fontSize: moderateScale(12),
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   textArea: {
     minHeight: moderateScale(80),
     textAlignVertical: 'top',
@@ -1657,12 +1778,6 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     color: '#374151',
     fontWeight: '500',
-  },
-  // Form Actions
-  formActions: {
-    flexDirection: 'row',
-    gap: moderateScale(12),
-    marginTop: moderateScale(8),
   },
   saveButton: {
     flex: 1,

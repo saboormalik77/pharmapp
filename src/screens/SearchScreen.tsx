@@ -17,7 +17,6 @@ import {
   ActivityIndicator,
   Dimensions,
   RefreshControl,
-  FlatList,
   Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -450,27 +449,6 @@ export function SearchScreen({ navigation }: any) {
   // Render Functions
   // ============================================================
 
-  // Render autocomplete item
-  const renderAutocompleteItem = ({ item }: { item: NDCPricingData }) => (
-    <TouchableOpacity
-      style={styles.autocompleteItem}
-      onPress={() => handleAddFromAutocomplete(item)}
-    >
-      <View style={styles.autocompleteItemLeft}>
-        <Text style={styles.autocompleteNdc}>{item.ndc}</Text>
-        <Text style={styles.autocompleteProduct} numberOfLines={1}>
-          {item.productName || 'Unknown Product'}
-        </Text>
-      </View>
-      <View style={styles.autocompleteItemRight}>
-        <Text style={styles.autocompletePrice}>
-          {formatCurrency(item.bestFullPrice || 0)}
-        </Text>
-        <Text style={styles.autocompletePriceLabel}>Best Price</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
   // Product Card Component (UNCHANGED from original)
   const ProductCard = ({ rec }: { rec: Recommendation }) => {
     const displayedData = getDisplayedData(rec);
@@ -559,9 +537,14 @@ export function SearchScreen({ navigation }: any) {
               </TouchableOpacity>
               <TextInput
                 style={styles.quantityInput}
-                value={displayedData.fullQuantity.toString()}
-                onChangeText={(text) => handleFullQuantityChange(rec.ndc, parseInt(text) || 0)}
+                value={(editableFullQuantities[rec.ndc] ?? 1).toString()}
+                onChangeText={(text) => {
+                  const numValue = text === '' ? 0 : parseInt(text) || 0;
+                  handleFullQuantityChange(rec.ndc, numValue);
+                }}
                 keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
               />
               <TouchableOpacity
                 style={styles.quantityButton}
@@ -592,9 +575,14 @@ export function SearchScreen({ navigation }: any) {
               </TouchableOpacity>
               <TextInput
                 style={styles.quantityInput}
-                value={displayedData.partialQuantity.toString()}
-                onChangeText={(text) => handlePartialQuantityChange(rec.ndc, parseInt(text) || 0)}
+                value={(editablePartialQuantities[rec.ndc] ?? 1).toString()}
+                onChangeText={(text) => {
+                  const numValue = text === '' ? 0 : parseInt(text) || 0;
+                  handlePartialQuantityChange(rec.ndc, numValue);
+                }}
                 keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
               />
               <TouchableOpacity
                 style={styles.quantityButton}
@@ -686,14 +674,26 @@ export function SearchScreen({ navigation }: any) {
           {/* Autocomplete Dropdown */}
           {showAutocomplete && autocompleteResults.length > 0 && (
             <View style={styles.autocompleteDropdown}>
-              <FlatList
-                data={autocompleteResults.slice(0, 10)}
-                keyExtractor={(item) => item.ndcNormalized}
-                renderItem={renderAutocompleteItem}
-                keyboardShouldPersistTaps="handled"
-                nestedScrollEnabled
-                style={styles.autocompleteList}
-              />
+              {autocompleteResults.slice(0, 10).map((item) => (
+                <TouchableOpacity
+                  key={item.ndcNormalized}
+                  style={styles.autocompleteItem}
+                  onPress={() => handleAddFromAutocomplete(item)}
+                >
+                  <View style={styles.autocompleteItemLeft}>
+                    <Text style={styles.autocompleteNdc}>{item.ndc}</Text>
+                    <Text style={styles.autocompleteProduct} numberOfLines={1}>
+                      {item.productName || 'Unknown Product'}
+                    </Text>
+                  </View>
+                  <View style={styles.autocompleteItemRight}>
+                    <Text style={styles.autocompletePrice}>
+                      {formatCurrency(item.bestFullPrice || 0)}
+                    </Text>
+                    <Text style={styles.autocompletePriceLabel}>Best Price</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
 
@@ -948,9 +948,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
-  },
-  autocompleteList: {
-    maxHeight: moderateScale(200),
   },
   autocompleteItem: {
     flexDirection: 'row',
@@ -1277,7 +1274,9 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(6),
     textAlign: 'center',
     fontSize: moderateScale(12),
-    color: '#374151',
+    color: '#1F2937',
+    fontWeight: '500',
+    padding: 0,
   },
   subtotal: {
     fontSize: moderateScale(11),

@@ -76,8 +76,12 @@ export const dashboardService = {
    * Get dashboard summary statistics
    * GET /dashboard/summary
    */
-  async getSummary(): Promise<DashboardSummary> {
+  async getSummary(): Promise<DashboardSummary | null> {
     const response = await apiClient.get<DashboardSummary>('/dashboard/summary');
+    // Handle null response (token refresh failed silently)
+    if (!response) {
+      return null;
+    }
     if (response.status === 'success' && response.data) {
       return response.data;
     }
@@ -88,7 +92,7 @@ export const dashboardService = {
    * Get earnings history
    * GET /dashboard/earnings/history
    */
-  async getEarningsHistory(params?: EarningsHistoryParams): Promise<EarningsHistoryResponse> {
+  async getEarningsHistory(params?: EarningsHistoryParams): Promise<EarningsHistoryResponse | null> {
     const queryParams: Record<string, string> = {};
     if (params?.periodType) {
       queryParams.periodType = params.periodType;
@@ -98,6 +102,10 @@ export const dashboardService = {
     }
 
     const response = await apiClient.get<EarningsHistoryResponse>('/dashboard/earnings/history', queryParams);
+    // Handle null response (token refresh failed silently)
+    if (!response) {
+      return null;
+    }
     if (response.status === 'success' && response.data) {
       return response.data;
     }
@@ -108,7 +116,7 @@ export const dashboardService = {
    * Get earnings estimation
    * GET /earnings-estimation
    */
-  async getEarningsEstimation(params?: EarningsHistoryParams): Promise<EarningsEstimationResponse> {
+  async getEarningsEstimation(params?: EarningsHistoryParams): Promise<EarningsEstimationResponse | null> {
     const queryParams: Record<string, string> = {};
     if (params?.periodType) {
       queryParams.periodType = params.periodType;
@@ -118,6 +126,10 @@ export const dashboardService = {
     }
 
     const response = await apiClient.get<EarningsEstimationResponse>('/earnings-estimation', queryParams);
+    // Handle null response (token refresh failed silently)
+    if (!response) {
+      return null;
+    }
     if (response.status === 'success' && response.data) {
       return response.data;
     }

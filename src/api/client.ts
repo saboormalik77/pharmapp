@@ -4,8 +4,9 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+// 
 const API_BASE_URL = 'https://pharmacy-backend-dusky.vercel.app/api';
+// const API_BASE_URL = 'http://[2400:adc5:168:5400:2fc7:aa8d:abf9:6f6a]:3000/api';
 
 // Storage keys (matching web cookies)
 const TOKEN_KEY = 'auth_token';
@@ -160,6 +161,7 @@ class ApiClient {
       if (!refreshToken) {
         await storage.clearAll();
         this.processQueue(new Error('No refresh token'), null);
+        // Return null silently - don't throw error to avoid console errors
         return null;
       }
 
@@ -179,13 +181,17 @@ class ApiClient {
         this.processQueue(null, data.data.token);
         return await retryRequest();
       } else {
+        // Token refresh failed - clear storage silently
         await storage.clearAll();
         this.processQueue(new Error('Token refresh failed'), null);
+        // Return null silently - don't throw error to avoid console errors
         return null;
       }
     } catch (error) {
+      // Token refresh error - clear storage silently
       await storage.clearAll();
       this.processQueue(error, null);
+      // Return null silently - don't throw error to avoid console errors
       return null;
     } finally {
       this.isRefreshing = false;
@@ -287,6 +293,9 @@ class ApiClient {
             if (retryResponse) {
               return retryResponse;
             }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
           }
         }
 
@@ -402,6 +411,9 @@ class ApiClient {
             if (retryResponse) {
               return retryResponse;
             }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
           }
         }
 
@@ -469,6 +481,26 @@ class ApiClient {
       });
 
       if (!response.ok) {
+        const isAuthEndpoint = endpoint.includes('/auth/');
+        if (response.status === 401 && !isAuthEndpoint && includeAuth) {
+          const token = await storage.getToken();
+          if (token) {
+            const retryResponse = await this.handleTokenRefresh<T>(() =>
+              this.put<T>(endpoint, body, includeAuth)
+            );
+            if (retryResponse) {
+              return retryResponse;
+            }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
+          }
+        }
+
+        if ((response.status === 401 || response.status === 403) && !isAuthEndpoint && includeAuth) {
+          await storage.clearAll();
+        }
+
         const error = await this.handleError(response);
         this.log('PUT', url, requestBody, null, error);
         throw error;
@@ -522,6 +554,26 @@ class ApiClient {
       });
 
       if (!response.ok) {
+        const isAuthEndpoint = endpoint.includes('/auth/');
+        if (response.status === 401 && !isAuthEndpoint && includeAuth) {
+          const token = await storage.getToken();
+          if (token) {
+            const retryResponse = await this.handleTokenRefresh<T>(() =>
+              this.patch<T>(endpoint, body, includeAuth)
+            );
+            if (retryResponse) {
+              return retryResponse;
+            }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
+          }
+        }
+
+        if ((response.status === 401 || response.status === 403) && !isAuthEndpoint && includeAuth) {
+          await storage.clearAll();
+        }
+
         const error = await this.handleError(response);
         this.log('PATCH', url, requestBody, null, error);
         throw error;
@@ -560,6 +612,26 @@ class ApiClient {
       });
 
       if (!response.ok) {
+        const isAuthEndpoint = endpoint.includes('/auth/');
+        if (response.status === 401 && !isAuthEndpoint && includeAuth) {
+          const token = await storage.getToken();
+          if (token) {
+            const retryResponse = await this.handleTokenRefresh<T>(() =>
+              this.delete<T>(endpoint, includeAuth)
+            );
+            if (retryResponse) {
+              return retryResponse;
+            }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
+          }
+        }
+
+        if ((response.status === 401 || response.status === 403) && !isAuthEndpoint && includeAuth) {
+          await storage.clearAll();
+        }
+
         const error = await this.handleError(response);
         this.log('DELETE', url, null, null, error);
         throw error;
@@ -622,6 +694,9 @@ class ApiClient {
             if (retryResponse) {
               return retryResponse;
             }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
           }
         }
 

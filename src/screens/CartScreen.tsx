@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -71,9 +71,17 @@ export function CartScreen({ navigation }: Props) {
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const user = useAuthStore((state) => state.user);
+  
+  // Debounce timers for quantity updates
+  const debounceTimers = useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
 
   useEffect(() => {
     loadCart();
+    
+    // Cleanup debounce timers on unmount
+    return () => {
+      Object.values(debounceTimers.current).forEach(timer => clearTimeout(timer));
+    };
   }, []);
 
   const loadCart = async () => {
@@ -95,7 +103,7 @@ export function CartScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  const handleUpdateQuantity = async (item: CartItem, newQuantity: number) => {
+  const handleUpdateQuantity = (item: CartItem, newQuantity: number) => {
     if (newQuantity < 1) return;
     if (newQuantity > item.availableQuantity) {
       Alert.alert('Error', `Only ${item.availableQuantity} units available`);
@@ -106,15 +114,57 @@ export function CartScreen({ navigation }: Props) {
       return;
     }
 
-    try {
-      setUpdatingItemId(item.id);
-      await marketplaceService.updateCartItem(item.id, newQuantity);
-      await loadCart();
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update quantity');
-    } finally {
-      setUpdatingItemId(null);
+    // Optimistically update the UI immediately
+    if (cart) {
+      const updatedItems = cart.items.map(cartItem => 
+        cartItem.id === item.id 
+          ? { ...cartItem, quantity: newQuantity, totalPrice: cartItem.unitPrice * newQuantity }
+          : cartItem
+      );
+      
+      // Recalculate summary
+      const newSubtotal = updatedItems.reduce((sum, cartItem) => sum + cartItem.totalPrice, 0);
+      const newTotalSavings = updatedItems.reduce((sum, cartItem) => sum + (cartItem.savings || 0), 0);
+      const newEstimatedTax = newSubtotal * 0.08;
+      const newTotal = newSubtotal - newTotalSavings + newEstimatedTax;
+      
+      setCart({
+        ...cart,
+        items: updatedItems,
+        summary: {
+          ...cart.summary,
+          itemCount: updatedItems.reduce((sum, cartItem) => sum + cartItem.quantity, 0),
+          subtotal: newSubtotal,
+          totalSavings: newTotalSavings,
+          estimatedTax: newEstimatedTax,
+          total: newTotal,
+        }
+      });
     }
+
+    // Clear existing debounce timer for this item
+    if (debounceTimers.current[item.id]) {
+      clearTimeout(debounceTimers.current[item.id]);
+    }
+
+    // Set new debounce timer - only send to backend after user stops clicking for 500ms
+    debounceTimers.current[item.id] = setTimeout(async () => {
+      try {
+        await marketplaceService.updateCartItem(item.id, newQuantity);
+        // Silently sync in background without loading
+      } catch (err: any) {
+        // Revert on error by silently reloading cart without showing loading
+        try {
+          const cartData = await marketplaceService.getCart();
+          setCart(cartData);
+        } catch {
+          // If reload fails, just show alert
+        }
+        Alert.alert('Error', err.message || 'Failed to update quantity');
+      }
+      // Clean up timer
+      delete debounceTimers.current[item.id];
+    }, 500);
   };
 
   const handleRemoveItem = async (item: CartItem) => {
@@ -183,7 +233,7 @@ export function CartScreen({ navigation }: Props) {
       setError(null);
 
       // Use deep link URL - backend should redirect to this after Stripe checkout
-      const returnUrl = 'pharmacollect://orders?checkout=success';
+      const returnUrl = 'pharmacollect://dashboard?checkout=success';
       
       const result = await marketplaceService.createCheckoutSession(
         user.email,
@@ -316,21 +366,17 @@ export function CartScreen({ navigation }: Props) {
                         <TouchableOpacity
                           style={[styles.quantityButton, item.quantity <= (item.minimumBuyQuantity || 1) && styles.quantityButtonDisabled]}
                           onPress={() => handleUpdateQuantity(item, item.quantity - 1)}
-                          disabled={updatingItemId === item.id || item.quantity <= (item.minimumBuyQuantity || 1)}
+                          disabled={item.quantity <= (item.minimumBuyQuantity || 1)}
                         >
                           <Minus color={item.quantity <= (item.minimumBuyQuantity || 1) ? '#D1D5DB' : '#374151'} size={moderateScale(14)} />
                         </TouchableOpacity>
                         <View style={styles.quantityDisplay}>
-                          {updatingItemId === item.id ? (
-                            <ActivityIndicator size="small" color="#14B8A6" />
-                          ) : (
-                            <Text style={styles.quantityText}>{item.quantity}</Text>
-                          )}
+                          <Text style={styles.quantityText}>{item.quantity}</Text>
                         </View>
                         <TouchableOpacity
                           style={[styles.quantityButton, item.quantity >= item.availableQuantity && styles.quantityButtonDisabled]}
                           onPress={() => handleUpdateQuantity(item, item.quantity + 1)}
-                          disabled={updatingItemId === item.id || item.quantity >= item.availableQuantity}
+                          disabled={item.quantity >= item.availableQuantity}
                         >
                           <Plus color={item.quantity >= item.availableQuantity ? '#D1D5DB' : '#374151'} size={moderateScale(14)} />
                         </TouchableOpacity>
