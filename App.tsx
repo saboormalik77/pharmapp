@@ -5,9 +5,20 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Linking, AppState } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { setAuthFailureCallback } from './src/api/client';
+import { useAuthStore } from './src/store/authStore';
 
 export default function App() {
   const navigationRef = useRef<any>(null);
+  const logout = useAuthStore((state) => state.logout);
+
+  useEffect(() => {
+    // Set up auth failure callback for automatic logout
+    setAuthFailureCallback(() => {
+      console.log('🔐 Auth token expired or invalid - logging out user');
+      logout();
+    });
+  }, [logout]);
 
   useEffect(() => {
     // Handle deep link when app is already open

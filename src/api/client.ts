@@ -5,13 +5,26 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // 
-const API_BASE_URL = 'https://pharmacy-backend-dusky.vercel.app/api';
-// const API_BASE_URL = 'http://[2400:adc5:168:5400:2fc7:aa8d:abf9:6f6a]:3000/api';
+// const API_BASE_URL = 'https://pharmacy-backend-dusky.vercel.app/api';
+const API_BASE_URL = 'http://[2400:adc5:168:5400:1d2:76a4:aac2:ac06]:3000/api';
 
 // Storage keys (matching web cookies)
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_DATA_KEY = 'user_data';
+
+// Callback for when auth fails and user needs to be logged out
+let onAuthFailureCallback: (() => void) | null = null;
+
+export function setAuthFailureCallback(callback: () => void) {
+  onAuthFailureCallback = callback;
+}
+
+function triggerAuthFailure() {
+  if (onAuthFailureCallback) {
+    onAuthFailureCallback();
+  }
+}
 
 export interface ApiResponse<T> {
   status: 'success' | 'error';
@@ -161,7 +174,7 @@ class ApiClient {
       if (!refreshToken) {
         await storage.clearAll();
         this.processQueue(new Error('No refresh token'), null);
-        // Return null silently - don't throw error to avoid console errors
+        triggerAuthFailure(); // Trigger logout
         return null;
       }
 
@@ -181,17 +194,17 @@ class ApiClient {
         this.processQueue(null, data.data.token);
         return await retryRequest();
       } else {
-        // Token refresh failed - clear storage silently
+        // Token refresh failed - clear storage and logout user
         await storage.clearAll();
         this.processQueue(new Error('Token refresh failed'), null);
-        // Return null silently - don't throw error to avoid console errors
+        triggerAuthFailure(); // Trigger logout
         return null;
       }
     } catch (error) {
-      // Token refresh error - clear storage silently
+      // Token refresh error - clear storage and logout user
       await storage.clearAll();
       this.processQueue(error, null);
-      // Return null silently - don't throw error to avoid console errors
+      triggerAuthFailure(); // Trigger logout
       return null;
     } finally {
       this.isRefreshing = false;
@@ -352,6 +365,26 @@ class ApiClient {
       });
 
       if (!response.ok) {
+        const isAuthEndpoint = endpoint.includes('/auth/');
+        if (response.status === 401 && !isAuthEndpoint && includeAuth) {
+          const token = await storage.getToken();
+          if (token) {
+            const retryResponse = await this.handleTokenRefresh<T>(() =>
+              this.getWithoutPharmacyId<T>(endpoint, params, includeAuth)
+            );
+            if (retryResponse) {
+              return retryResponse;
+            }
+            // Token refresh failed - return null silently instead of throwing error
+            // This prevents console errors from showing to users
+            return null as any;
+          }
+        }
+
+        if ((response.status === 401 || response.status === 403) && !isAuthEndpoint && includeAuth) {
+          await storage.clearAll();
+        }
+
         const error = await this.handleError(response);
         this.log('GET', url.toString(), null, null, error);
         throw error;
@@ -364,10 +397,12 @@ class ApiClient {
       if (error.status) {
         throw error;
       }
-      throw {
+      const apiError = {
         status: 500,
         message: error.message || 'Network error occurred',
       } as ApiError;
+      this.log('GET', url.toString(), null, null, apiError);
+      throw apiError;
     }
   }
 
@@ -716,10 +751,12 @@ class ApiClient {
       if (error.status) {
         throw error;
       }
-      throw {
+      const apiError = {
         status: 500,
         message: error.message || 'Network error occurred',
       } as ApiError;
+      this.log('UPLOAD', url, null, null, apiError);
+      throw apiError;
     }
   }
 }
