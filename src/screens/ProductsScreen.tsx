@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import {
   Package,
   Search,
@@ -114,6 +114,7 @@ export function ProductsScreen() {
   // Camera state
   const [showCamera, setShowCamera] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
 
   // Form fields
   const [ndcInput, setNdcInput] = useState('');
@@ -169,6 +170,12 @@ export function ProductsScreen() {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // Debug camera state
+  useEffect(() => {
+    console.log('showCamera state changed:', showCamera);
+    console.log('cameraPermission:', cameraPermission);
+  }, [showCamera, cameraPermission]);
 
   // NDC lookup effect
   useEffect(() => {
@@ -276,6 +283,7 @@ export function ProductsScreen() {
     setNdcLookupSuccess(false);
     setEditingProductId(null);
     setEntryMode('initial');
+    setScanned(false);
   };
 
   const closeModal = () => {
@@ -284,6 +292,33 @@ export function ProductsScreen() {
     setShowDatePicker(false);
     resetForm();
     setError(null);
+  };
+
+  const handleBarcodeScanned = async (result: BarcodeScanningResult) => {
+    if (scanned) return;
+    
+    setScanned(true);
+    const barcode = result.data;
+    
+    console.log('Barcode scanned:', barcode);
+    
+    // Close camera
+    setShowCamera(false);
+    
+    // Set NDC and trigger lookup
+    setNdcInput(barcode);
+    setEntryMode('manual');
+    
+    // Reopen the product modal after a short delay
+    setTimeout(() => {
+      setIsModalOpen(true);
+      console.log('Product modal reopened with scanned NDC');
+    }, 300);
+    
+    // The useEffect will handle the NDC lookup
+    
+    // Show success feedback
+    Alert.alert('Barcode Scanned', `NDC: ${barcode}`, [{ text: 'OK' }]);
   };
 
   const openAddModal = () => {
@@ -799,27 +834,47 @@ export function ProductsScreen() {
                   <TouchableOpacity
                     style={styles.entryModeButton}
                     onPress={async () => {
-                      // Check camera permissions
-                      if (!cameraPermission) {
-                        // Permission is still loading
-                        return;
-                      }
-                      
-                      if (!cameraPermission.granted) {
-                        // Request permission
-                        const { granted } = await requestCameraPermission();
-                        if (!granted) {
-                          Alert.alert(
-                            'Camera Permission Required',
-                            'Please allow camera access to scan barcodes.',
-                            [{ text: 'OK' }]
-                          );
+                      try {
+                        console.log('Scan Barcode button pressed');
+                        console.log('Camera permission:', cameraPermission);
+                        
+                        // Check camera permissions
+                        if (!cameraPermission) {
+                          console.log('Camera permission is loading...');
+                          Alert.alert('Please wait', 'Camera is initializing...');
                           return;
                         }
+                        
+                        if (!cameraPermission.granted) {
+                          console.log('Requesting camera permission...');
+                          // Request permission
+                          const result = await requestCameraPermission();
+                          console.log('Permission result:', result);
+                          
+                          if (!result.granted) {
+                            Alert.alert(
+                              'Camera Permission Required',
+                              'Please allow camera access to scan barcodes.',
+                              [{ text: 'OK' }]
+                            );
+                            return;
+                          }
+                        }
+                        
+                        console.log('Closing product modal and opening camera...');
+                        // Close the product modal first (React Native doesn't support nested modals)
+                        setIsModalOpen(false);
+                        setScanned(false); // Reset scanned state
+                        
+                        // Wait a bit for the modal to close, then open camera
+                        setTimeout(() => {
+                          setShowCamera(true);
+                          console.log('Camera state set to true');
+                        }, 300);
+                      } catch (err) {
+                        console.error('Error opening camera:', err);
+                        Alert.alert('Error', 'Failed to open camera: ' + err);
                       }
-                      
-                      // Open camera
-                      setShowCamera(true);
                     }}
                   >
                     <CameraIcon color="#FFFFFF" size={moderateScale(16)} />
@@ -1144,37 +1199,80 @@ export function ProductsScreen() {
         animationType="slide"
         transparent={false}
         onRequestClose={() => {
+          console.log('Camera modal onRequestClose called');
           setShowCamera(false);
-          setEntryMode('initial');
+          setScanned(false);
         }}
       >
         <View style={styles.cameraContainer}>
-          <CameraView
-            style={styles.camera}
-            facing="back"
-          >
-            <View style={styles.cameraHeader}>
+          {cameraPermission?.granted ? (
+            <>
+              <CameraView
+                style={styles.camera}
+                facing="back"
+                barcodeScannerSettings={{
+                  barcodeTypes: [
+                    'upc_a',
+                    'upc_e',
+                    'ean13',
+                    'ean8',
+                    'code39',
+                    'code128',
+                    'code93',
+                    'codabar',
+                    'itf14',
+                    'pdf417',
+                    'qr',
+                  ],
+                }}
+                onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+              />
+              {/* Overlay UI - Using absolute positioning */}
+              <View style={styles.cameraHeader}>
+                <TouchableOpacity
+                  style={styles.cameraCloseButton}
+                  onPress={() => {
+                    console.log('Close button pressed');
+                    setShowCamera(false);
+                    setScanned(false);
+                  }}
+                >
+                  <X color="#FFFFFF" size={moderateScale(24)} />
+                </TouchableOpacity>
+                <Text style={styles.cameraTitle}>Scan Barcode</Text>
+                <View style={styles.cameraPlaceholder} />
+              </View>
+              <View style={styles.cameraFooter}>
+                <Text style={styles.cameraHint}>
+                  Point your camera at a barcode to scan
+                </Text>
+                <View style={styles.cameraScanFrame} />
+              </View>
+            </>
+          ) : (
+            <View style={styles.cameraPermissionContainer}>
+              <Text style={styles.cameraPermissionText}>
+                Camera permission is required to scan barcodes
+              </Text>
               <TouchableOpacity
-                style={styles.cameraCloseButton}
-                onPress={() => {
-                  setShowCamera(false);
-                  setEntryMode('initial');
+                style={styles.cameraPermissionButton}
+                onPress={async () => {
+                  const result = await requestCameraPermission();
+                  if (!result.granted) {
+                    setShowCamera(false);
+                  }
                 }}
               >
-                <X color="#FFFFFF" size={moderateScale(24)} />
+                <Text style={styles.cameraPermissionButtonText}>Grant Permission</Text>
               </TouchableOpacity>
-              <Text style={styles.cameraTitle}>Scan Barcode</Text>
-              <View style={styles.cameraPlaceholder} />
+              <TouchableOpacity
+                style={styles.cameraCloseButtonAlt}
+                onPress={() => setShowCamera(false)}
+              >
+                <Text style={styles.cameraCloseButtonAltText}>Close</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.cameraFooter}>
-              <Text style={styles.cameraHint}>
-                Point your camera at a barcode to scan
-              </Text>
-              <Text style={styles.cameraNote}>
-                Barcode scanning functionality coming soon
-              </Text>
-            </View>
-          </CameraView>
+          )}
         </View>
       </Modal>
     </SafeAreaView>
@@ -1880,6 +1978,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cameraHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1887,12 +1989,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: moderateScale(20),
     paddingBottom: moderateScale(20),
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 1,
   },
   cameraCloseButton: {
     width: moderateScale(40),
     height: moderateScale(40),
     borderRadius: moderateScale(20),
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1914,16 +2017,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     paddingTop: moderateScale(20),
+    zIndex: 1,
   },
   cameraHint: {
     fontSize: moderateScale(14),
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: moderateScale(8),
+    marginBottom: moderateScale(16),
+  },
+  cameraScanFrame: {
+    width: moderateScale(250),
+    height: moderateScale(250),
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderRadius: moderateScale(12),
+    backgroundColor: 'transparent',
   },
   cameraNote: {
     fontSize: moderateScale(12),
     color: '#9CA3AF',
     textAlign: 'center',
+  },
+  cameraPermissionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: moderateScale(20),
+    backgroundColor: '#000000',
+  },
+  cameraPermissionText: {
+    fontSize: moderateScale(16),
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: moderateScale(20),
+  },
+  cameraPermissionButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: moderateScale(24),
+    paddingVertical: moderateScale(12),
+    borderRadius: moderateScale(8),
+    marginBottom: moderateScale(12),
+  },
+  cameraPermissionButtonText: {
+    color: '#FFFFFF',
+    fontSize: moderateScale(14),
+    fontWeight: '600',
+  },
+  cameraCloseButtonAlt: {
+    paddingHorizontal: moderateScale(24),
+    paddingVertical: moderateScale(12),
+  },
+  cameraCloseButtonAltText: {
+    color: '#9CA3AF',
+    fontSize: moderateScale(14),
   },
 });

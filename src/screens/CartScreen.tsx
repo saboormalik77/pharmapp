@@ -254,7 +254,36 @@ export function CartScreen({ navigation }: Props) {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to start checkout');
-      Alert.alert('Checkout Error', err.message || 'Failed to start checkout. Please try again.');
+      
+      // Check if error is about cart items having issues (minimum quantity issue)
+      const errorMessage = err.message || err.error || '';
+      const errorStatus = err.status || 500;
+      
+      // Check for the specific error message about cart items having issues
+      if (errorStatus === 400 && errorMessage.toLowerCase().includes('items in your cart have issues')) {
+        // Find items with quantity below minimum
+        const itemsWithIssues = cartItems.filter(item => {
+          const minQuantity = item.minimumBuyQuantity && item.minimumBuyQuantity > 0 ? item.minimumBuyQuantity : 1;
+          return item.quantity < minQuantity;
+        });
+        
+        if (itemsWithIssues.length > 0) {
+          Alert.alert(
+            'Minimum Quantity Required',
+            `Please ensure all items meet the minimum buy quantity requirement:\n\n${itemsWithIssues.map(item => {
+              const minQty = item.minimumBuyQuantity && item.minimumBuyQuantity > 0 ? item.minimumBuyQuantity : 1;
+              return `• ${item.productName}: Minimum ${minQty} units (Current: ${item.quantity})`;
+            }).join('\n')}\n\nPlease update the quantities in your cart and try again.`
+          );
+        } else {
+          Alert.alert(
+            'Cart Issue',
+            'Some items in your cart have issues. Please check that all items meet the minimum buy quantity requirements and try again.'
+          );
+        }
+      } else {
+        Alert.alert('Checkout Error', err.message || 'Failed to start checkout. Please try again.');
+      }
     } finally {
       setCheckingOut(false);
     }

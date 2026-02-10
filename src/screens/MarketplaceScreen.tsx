@@ -262,6 +262,7 @@ export function MarketplaceScreen({ navigation }: any) {
     const savings = deal.savings || ((deal.originalPrice - deal.dealPrice) / deal.originalPrice) * 100;
     const colors: [string, string] = type === 'day' ? ['#F59E0B', '#D97706'] : type === 'week' ? ['#8B5CF6', '#7C3AED'] : ['#14B8A6', '#0D9488'];
     const typeLabel = type === 'day' ? 'Day' : type === 'week' ? 'Week' : 'Month';
+    const isInCart = cart?.items.some(item => item.dealId === deal.id);
 
     return (
       <TouchableOpacity style={styles.featuredCard} onPress={() => openDealModal(deal)}>
@@ -287,7 +288,34 @@ export function MarketplaceScreen({ navigation }: any) {
               <Clock color="rgba(255,255,255,0.8)" size={moderateScale(10)} />
               <Text style={styles.metaText}>Exp: {formatDate(deal.expiryDate)}</Text>
             </View>
+            <View style={styles.metaItem}>
+              <ShoppingCart color="rgba(255,255,255,0.8)" size={moderateScale(10)} />
+              <Text style={styles.metaText}>Min: {deal.minimumBuyQuantity || 1}</Text>
+            </View>
           </View>
+          {deal.status === 'active' && (
+            <TouchableOpacity
+              style={[styles.featuredAddButton, isInCart && styles.featuredAddButtonInCart]}
+              onPress={(e) => {
+                e.stopPropagation();
+                if (!isInCart) {
+                  handleAddToCart(deal, deal.minimumBuyQuantity > 0 ? deal.minimumBuyQuantity : 1);
+                }
+              }}
+              disabled={addingToCart === deal.id || isInCart}
+            >
+              {addingToCart === deal.id ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : isInCart ? (
+                <Text style={styles.featuredAddButtonText}>In Cart</Text>
+              ) : (
+                <>
+                  <Plus color="#FFFFFF" size={moderateScale(12)} />
+                  <Text style={styles.featuredAddButtonText}>Add</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </LinearGradient>
       </TouchableOpacity>
     );
@@ -330,9 +358,15 @@ export function MarketplaceScreen({ navigation }: any) {
             )}
           </View>
           <View style={styles.dealFooter}>
-            <View style={styles.expiryRow}>
-              <Clock color="#6B7280" size={moderateScale(10)} />
-              <Text style={styles.expiryText}>Exp: {formatDate(deal.expiryDate)}</Text>
+            <View style={styles.dealFooterLeft}>
+              <View style={styles.expiryRow}>
+                <Clock color="#6B7280" size={moderateScale(10)} />
+                <Text style={styles.expiryText} numberOfLines={1}>Exp: {formatDate(deal.expiryDate)}</Text>
+              </View>
+              <View style={styles.minQuantityRow}>
+                <ShoppingCart color="#6B7280" size={moderateScale(10)} />
+                <Text style={styles.minQuantityText} numberOfLines={1}>Min: {deal.minimumBuyQuantity || 1}</Text>
+              </View>
             </View>
             {deal.status === 'active' && (
               <TouchableOpacity
@@ -701,6 +735,10 @@ export function MarketplaceScreen({ navigation }: any) {
                       <Text style={styles.dealModalInfoText}>{selectedDeal.remainingQuantity} available</Text>
                     </View>
                     <View style={styles.dealModalInfoItem}>
+                      <ShoppingCart color="#6B7280" size={moderateScale(14)} />
+                      <Text style={styles.dealModalInfoText}>Minimum Buy: {selectedDeal.minimumBuyQuantity || 1} {selectedDeal.unit || 'units'}</Text>
+                    </View>
+                    <View style={styles.dealModalInfoItem}>
                       <Calendar color="#6B7280" size={moderateScale(14)} />
                       <Text style={styles.dealModalInfoText}>Expires: {formatDate(selectedDeal.expiryDate)}</Text>
                     </View>
@@ -943,7 +981,8 @@ const styles = StyleSheet.create({
   },
   featuredGradient: {
     padding: moderateScale(14),
-    minHeight: moderateScale(140),
+    minHeight: moderateScale(180),
+    justifyContent: 'space-between',
   },
   featuredBadge: {
     flexDirection: 'row',
@@ -997,8 +1036,10 @@ const styles = StyleSheet.create({
   },
   featuredMeta: {
     flexDirection: 'row',
-    gap: moderateScale(12),
+    flexWrap: 'wrap',
+    gap: moderateScale(8),
     marginTop: moderateScale(10),
+    marginBottom: moderateScale(8),
   },
   metaItem: {
     flexDirection: 'row',
@@ -1008,6 +1049,28 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: moderateScale(9),
     color: 'rgba(255, 255, 255, 0.8)',
+  },
+  featuredAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingLeft: moderateScale(6),
+    paddingRight: moderateScale(10),
+    paddingVertical: moderateScale(8),
+    borderRadius: moderateScale(8),
+    gap: moderateScale(4),
+    marginTop: moderateScale(8),
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  featuredAddButtonInCart: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  featuredAddButtonText: {
+    color: '#FFFFFF',
+    fontSize: moderateScale(11),
+    fontWeight: '600',
   },
   // Deals Section
   dealsSection: {
@@ -1112,24 +1175,49 @@ const styles = StyleSheet.create({
     paddingTop: moderateScale(8),
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
+    gap: moderateScale(8),
+  },
+  dealFooterLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: moderateScale(6),
+    flexShrink: 1,
+    flexGrow: 1,
+    minWidth: 0,
+    paddingRight: moderateScale(4),
   },
   expiryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: moderateScale(3),
+    flexShrink: 0,
   },
   expiryText: {
     fontSize: moderateScale(8),
     color: '#6B7280',
   },
+  minQuantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: moderateScale(3),
+    flexShrink: 0,
+  },
+  minQuantityText: {
+    fontSize: moderateScale(8),
+    color: '#6B7280',
+    flexShrink: 0,
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#14B8A6',
-    paddingHorizontal: moderateScale(10),
+    paddingLeft: moderateScale(6),
+    paddingRight: moderateScale(10),
     paddingVertical: moderateScale(5),
     borderRadius: moderateScale(6),
     gap: moderateScale(3),
+    marginLeft: moderateScale(8),
+    flexShrink: 0,
   },
   addButtonInCart: {
     backgroundColor: '#6B7280',
