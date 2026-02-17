@@ -17,6 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pharmanalytics.mobile",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to your camera to scan barcodes for product entry."
       }
@@ -27,8 +28,11 @@
         "backgroundColor": "#14B8A6"
       },
       "package": "com.pharmanalytics.mobile",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -36,7 +40,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "fab97110-29ac-42ae-9215-36e3a68717eb"
+        "projectId": "59c0a7d6-fc38-41e9-a3e1-ab8ae54f7782"
       }
     },
     "plugins": [
@@ -46,7 +50,10 @@
         {
           "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan barcodes."
         }
-      ]
-    ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
+    ],
+    "owner": "younas345m"
   }
 }

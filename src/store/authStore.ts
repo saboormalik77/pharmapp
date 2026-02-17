@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authService, AuthResponse } from '../api/services/authService';
 import { storage } from '../api/client';
+import { getFCMToken } from '../utils/fcmToken';
 
 // User interface matching web version (snake_case from API)
 interface User {
@@ -62,7 +63,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true });
 
-      const response = await authService.signin({ email, password });
+      // Get FCM token if available (for push notifications)
+      console.log('🔍 Attempting to get FCM token...');
+      const fcmToken = await getFCMToken();
+      console.log('📱 FCM Token result:', fcmToken ? `${fcmToken.substring(0, 20)}... (length: ${fcmToken.length})` : 'NULL - Firebase not available or permission denied');
+
+      const response = await authService.signin({ 
+        email, 
+        password, 
+        fcmToken: fcmToken || undefined // Convert null to undefined for TypeScript
+      });
 
       set({
         user: response.user,

@@ -24,6 +24,7 @@ export interface SignupData {
 export interface SigninData {
   email: string;
   password: string;
+  fcmToken?: string;
 }
 
 export interface AuthResponse {
@@ -78,7 +79,7 @@ export const authService = {
   async signin(data: SigninData): Promise<AuthResponse> {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🔐 AUTH SIGNIN:', '/auth/signin');
-    console.log('📤 Request:', JSON.stringify({ email: data.email }, null, 2));
+    console.log('📤 Request:', JSON.stringify({ email: data.email, fcmToken: data.fcmToken ? data.fcmToken.substring(0, 20) + '...' : null }, null, 2));
     console.log('⏱️  Time:', new Date().toLocaleTimeString());
 
     const response = await apiClient.post<AuthResponse>('/auth/signin', data, false);
