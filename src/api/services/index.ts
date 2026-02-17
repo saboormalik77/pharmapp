@@ -115,3 +115,10 @@ export type {
   AnalysisSummary,
   AnalysisResponse,
 } from './inventoryAnalysisService';
+
+export { notificationService } from './notificationService';
+export type {
+  Notification,
+  NotificationFilters,
+  NotificationResponse,
+} from './notificationService';

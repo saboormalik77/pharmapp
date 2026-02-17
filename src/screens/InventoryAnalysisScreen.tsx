@@ -13,6 +13,8 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
+import { DrawerActions, CommonActions } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import {
@@ -84,6 +86,9 @@ interface SelectedFile {
 }
 
 export function InventoryAnalysisScreen() {
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  
   // State
   const [file, setFile] = useState<SelectedFile | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -95,8 +100,72 @@ export function InventoryAnalysisScreen() {
   const [uploadResponseData, setUploadResponseData] = useState<AnalysisResponse | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showUploadSection, setShowUploadSection] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('keep');
+  const [activeTab, setActiveTab] = useState<TabType>(
+    route.params?.activeTab || 'keep'
+  );
   const [modalActiveTab, setModalActiveTab] = useState<TabType>('return');
+  
+  // Update active tab when route params change (e.g., from notification)
+  useEffect(() => {
+    if (route.params?.activeTab) {
+      setActiveTab(route.params.activeTab);
+    }
+  }, [route.params]);
+
+  // Track if we've already closed the drawer to prevent multiple attempts
+  const drawerClosedRef = React.useRef(false);
+
+  // Close drawer when screen is focused and opened from notification
+  useFocusEffect(
+    React.useCallback(() => {
+      if (route.params?.activeTab && !drawerClosedRef.current) {
+        // Close drawer when navigated from notification
+        // Try multiple times with increasing delays to ensure it works
+        const timers: NodeJS.Timeout[] = [];
+        
+        // First attempt - immediate
+        timers.push(setTimeout(() => {
+          try {
+            navigation.dispatch(DrawerActions.closeDrawer());
+            drawerClosedRef.current = true;
+          } catch (error) {
+            // Continue to next attempt
+          }
+        }, 100));
+        
+        // Second attempt - after 300ms
+        timers.push(setTimeout(() => {
+          try {
+            navigation.dispatch(DrawerActions.closeDrawer());
+            drawerClosedRef.current = true;
+          } catch (error) {
+            // Continue to next attempt
+          }
+        }, 300));
+        
+        // Third attempt - after 600ms
+        timers.push(setTimeout(() => {
+          try {
+            navigation.dispatch(DrawerActions.closeDrawer());
+            drawerClosedRef.current = true;
+          } catch (error) {
+            console.log('All drawer close attempts failed');
+          }
+        }, 600));
+        
+        return () => {
+          timers.forEach(timer => clearTimeout(timer));
+        };
+      }
+    }, [route.params?.activeTab, navigation])
+  );
+
+  // Reset drawer closed flag when params change
+  useEffect(() => {
+    if (!route.params?.activeTab) {
+      drawerClosedRef.current = false;
+    }
+  }, [route.params?.activeTab]);
 
   // Fetch analysis summary on page load
   useEffect(() => {
@@ -315,6 +384,7 @@ export function InventoryAnalysisScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#14B8A6" />
@@ -762,6 +832,10 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingTop: moderateScale(8),
+    paddingBottom: moderateScale(20),
   },
   // Header
   header: {

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerItem } from '@react-navigation/drawer';
-import { View, Text, ActivityIndicator, StyleSheet, Dimensions, Platform } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Dimensions, Platform, TouchableOpacity } from 'react-native';
 import { 
   Home, 
   ShoppingBag, 
@@ -19,6 +19,8 @@ import {
   CreditCard,
   BarChart3,
 } from 'lucide-react-native';
+import { NotificationDropdown } from '../components/NotificationDropdown';
+import { setNavigationRef, initializePushNotificationHandlers } from '../utils/pushNotificationHandler';
 
 import { useAuthStore } from '../store/authStore';
 
@@ -69,7 +71,7 @@ export type RootStackParamList = {
   Settings: undefined;
   Subscription: undefined;
   Cart: undefined;
-  InventoryAnalysis: undefined;
+  InventoryAnalysis: { activeTab?: 'keep' | 'return' } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -193,6 +195,7 @@ function TabNavigator() {
           fontSize: 16,
           fontWeight: '600',
         },
+        headerRight: () => <NotificationDropdown />,
       }}
     >
       <Tab.Screen
@@ -202,6 +205,7 @@ function TabNavigator() {
           tabBarIcon: ({ color }) => <Home color={color} size={tabIconSize} />,
           tabBarLabel: 'Dashboard',
           title: 'Dashboard',
+          headerRight: () => <NotificationDropdown />,
         }}
       />
       <Tab.Screen
@@ -211,6 +215,7 @@ function TabNavigator() {
           tabBarIcon: ({ color }) => <Store color={color} size={tabIconSize} />,
           tabBarLabel: 'Marketplace',
           title: 'Marketplace',
+          headerRight: () => <NotificationDropdown />,
         }}
       />
       <Tab.Screen
@@ -220,6 +225,7 @@ function TabNavigator() {
           tabBarIcon: ({ color }) => <Search color={color} size={tabIconSize} />,
           tabBarLabel: 'Search',
           title: 'Search',
+          headerRight: () => <NotificationDropdown />,
         }}
       />
       <Tab.Screen
@@ -229,6 +235,7 @@ function TabNavigator() {
           tabBarIcon: ({ color }) => <ShoppingBag color={color} size={tabIconSize} />,
           tabBarLabel: 'Orders',
           title: 'Orders',
+          headerRight: () => <NotificationDropdown />,
         }}
       />
       <Tab.Screen
@@ -454,6 +461,14 @@ export function AppNavigator() {
   useEffect(() => {
     loadStoredAuth();
   }, []);
+
+  // Initialize push notification handlers
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Initialize push notification handlers
+      initializePushNotificationHandlers();
+    }
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (

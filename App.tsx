@@ -7,10 +7,12 @@ import Toast from 'react-native-toast-message';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { setAuthFailureCallback } from './src/api/client';
 import { useAuthStore } from './src/store/authStore';
+import { setNavigationRef, initializePushNotificationHandlers } from './src/utils/pushNotificationHandler';
 
 export default function App() {
   const navigationRef = useRef<any>(null);
   const logout = useAuthStore((state) => state.logout);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   useEffect(() => {
     // Set up auth failure callback for automatic logout
@@ -19,6 +21,20 @@ export default function App() {
       logout();
     });
   }, [logout]);
+
+  // Set navigation ref for push notification navigation
+  useEffect(() => {
+    if (navigationRef.current) {
+      setNavigationRef(navigationRef);
+    }
+  }, []);
+
+  // Initialize push notification handlers when authenticated
+  useEffect(() => {
+    if (isAuthenticated && navigationRef.current) {
+      initializePushNotificationHandlers();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     // Handle deep link when app is already open
