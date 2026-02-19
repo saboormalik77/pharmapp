@@ -16,10 +16,15 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pharmanalytics.mobile",
+      "bundleIdentifier": "com.tmit.pharmanalytics",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSCameraUsageDescription": "This app needs access to your camera to scan barcodes for product entry."
+        "NSCameraUsageDescription": "This app needs access to your camera to scan barcodes for product entry.",
+        "UIBackgroundModes": ["remote-notification", "fetch"],
+        "FirebaseAppDelegateProxyEnabled": false
+      },
+      "entitlements": {
+        "aps-environment": "production"
       }
     },
     "android": {
@@ -27,7 +32,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#14B8A6"
       },
-      "package": "com.pharmanalytics.mobile",
+      "package": "com.tmit.pharmanalytics",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "CAMERA",

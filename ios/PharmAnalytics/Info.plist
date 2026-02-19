@@ -27,7 +27,7 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>com.pharmanalytics.mobile</string>
+          <string>com.tmit.pharmanalytics</string>
         </array>
       </dict>
     </array>
@@ -75,6 +75,13 @@
     <key>UIUserInterfaceStyle</key>
     <string>Light</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+    <key>UIBackgroundModes</key>
+    <array>
+      <string>remote-notification</string>
+      <string>fetch</string>
+    </array>
+    <key>FirebaseAppDelegateProxyEnabled</key>
     <false/>
   </dict>
 </plist>

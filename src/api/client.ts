@@ -5,7 +5,8 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // 
-const API_BASE_URL = 'https://pharmacy-backend-dusky.vercel.app/api';
+// const API_BASE_URL = 'https://pharmacy-backend-dusky.vercel.app/api';
+const API_BASE_URL = 'https://pharmacy-backend-apgaf6eyf6bwcmgp.centralus-01.azurewebsites.net/api';
 // const API_BASE_URL = 'http://192.168.19.5:3000/api';
 
 // Storage keys (matching web cookies)

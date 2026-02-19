@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:268386203490:android:273cdf6f7c5e2cbb78de3b",
+        "mobilesdk_app_id": "1:268386203490:android:37cd4d854badbf3878de3b",
         "android_client_info": {
-          "package_name": "com.pharmanalytics.mobile"
+          "package_name": "com.tmit.pharmanalytics"
         }
       },
       "oauth_client": [],
