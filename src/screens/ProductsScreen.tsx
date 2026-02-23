@@ -115,6 +115,7 @@ export function ProductsScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [isScannedNdc, setIsScannedNdc] = useState(false);
 
   // Form fields
   const [ndcInput, setNdcInput] = useState('');
@@ -179,7 +180,8 @@ export function ProductsScreen() {
 
   // NDC lookup effect
   useEffect(() => {
-    if (entryMode !== 'manual' || !isModalOpen) return;
+    // Run lookup when using either manual entry or scan flow
+    if ((entryMode !== 'manual' && entryMode !== 'scan') || !isModalOpen) return;
     if (!ndcInput.trim()) return;
 
     // Only lookup if product name is empty (new entry) or NDC changed during edit
@@ -188,7 +190,7 @@ export function ProductsScreen() {
     if (ndcDebounceRef.current) {
       clearTimeout(ndcDebounceRef.current);
     }
-
+    console.log('ndcInput', ndcInput);
     ndcDebounceRef.current = setTimeout(async () => {
       const cleanNdc = ndcInput.replace(/[-\s]/g, '');
       
@@ -211,10 +213,27 @@ export function ProductsScreen() {
           }
         } else {
           setNdcLookupSuccess(false);
+
+          // If this NDC came from a scan, explicitly tell the user it is invalid
+          if (isScannedNdc) {
+            Alert.alert(
+              'Invalid NDC',
+              'No medication was found for this scanned NDC code.',
+              [{ text: 'OK' }]
+            );
+          }
         }
       } catch (err) {
         console.log('Could not lookup NDC:', cleanNdc);
         setNdcLookupSuccess(false);
+
+        if (isScannedNdc) {
+          Alert.alert(
+            'NDC Lookup Failed',
+            'There was a problem looking up this scanned NDC. Please try again or enter it manually.',
+            [{ text: 'OK' }]
+          );
+        }
       } finally {
         setNdcLookupLoading(false);
       }
@@ -225,7 +244,7 @@ export function ProductsScreen() {
         clearTimeout(ndcDebounceRef.current);
       }
     };
-  }, [ndcInput, entryMode, isModalOpen, editingProductId]);
+  }, [ndcInput, entryMode, isModalOpen, editingProductId, isScannedNdc]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -284,6 +303,7 @@ export function ProductsScreen() {
     setEditingProductId(null);
     setEntryMode('initial');
     setScanned(false);
+    setIsScannedNdc(false);
   };
 
   const closeModal = () => {
@@ -299,14 +319,19 @@ export function ProductsScreen() {
     
     setScanned(true);
     const barcode = result.data;
+    const cleanNdcFromScan = barcode.replace(/\D/g, '');
     
-    console.log('Barcode scanned:', barcode);
+    console.log('Barcode scanned:', barcode, '-> clean NDC:', cleanNdcFromScan);
     
     // Close camera
     setShowCamera(false);
     
-    // Set NDC and trigger lookup
-    setNdcInput(barcode);
+    // Mark that this NDC came from a scan, and set it so the existing lookup flow runs
+    // Use only numeric characters from the scanned value so NDC lookup works correctly
+    setNdcInput(cleanNdcFromScan || barcode);
+    setProductName('');
+    setNdcLookupSuccess(false);
+    setIsScannedNdc(true);
     setEntryMode('manual');
     
     // Reopen the product modal after a short delay
@@ -315,10 +340,8 @@ export function ProductsScreen() {
       console.log('Product modal reopened with scanned NDC');
     }, 300);
     
-    // The useEffect will handle the NDC lookup
-    
-    // Show success feedback
-    Alert.alert('Barcode Scanned', `NDC: ${barcode}`, [{ text: 'OK' }]);
+    // Show scanned value in popup (no API calls, just display value)
+    Alert.alert('Barcode Scanned', `NDC: ${cleanNdcFromScan || barcode}`, [{ text: 'OK' }]);
   };
 
   const openAddModal = () => {
@@ -914,6 +937,7 @@ export function ProductsScreen() {
                         value={ndcInput}
                         onChangeText={(text) => {
                           setNdcInput(text);
+                          setIsScannedNdc(false);
                           if (!editingProductId) {
                             setNdcLookupSuccess(false);
                             setProductName('');
@@ -1196,83 +1220,87 @@ export function ProductsScreen() {
       {/* Camera Modal */}
       <Modal
         visible={showCamera}
-        animationType="slide"
-        transparent={false}
+        animationType="fade"
+        transparent={true}
         onRequestClose={() => {
           console.log('Camera modal onRequestClose called');
           setShowCamera(false);
           setScanned(false);
         }}
       >
-        <View style={styles.cameraContainer}>
-          {cameraPermission?.granted ? (
-            <>
-              <CameraView
-                style={styles.camera}
-                facing="back"
-                barcodeScannerSettings={{
-                  barcodeTypes: [
-                    'upc_a',
-                    'upc_e',
-                    'ean13',
-                    'ean8',
-                    'code39',
-                    'code128',
-                    'code93',
-                    'codabar',
-                    'itf14',
-                    'pdf417',
-                    'qr',
-                  ],
-                }}
-                onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-              />
-              {/* Overlay UI - Using absolute positioning */}
-              <View style={styles.cameraHeader}>
+        <View style={styles.cameraModalOverlay}>
+          <View style={styles.cameraModalContainer}>
+            {cameraPermission?.granted ? (
+              <>
+                <View style={styles.cameraModalHeader}>
+                  <Text style={styles.cameraModalTitle}>Scan Barcode</Text>
+                  <TouchableOpacity
+                    style={styles.cameraModalCloseButton}
+                    onPress={() => {
+                      console.log('Close button pressed');
+                      setShowCamera(false);
+                      setScanned(false);
+                    }}
+                  >
+                    <X color="#374151" size={moderateScale(20)} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.cameraViewContainer}>
+                  <CameraView
+                    style={styles.cameraView}
+                    facing="back"
+                    barcodeScannerSettings={{
+                      barcodeTypes: [
+                        'upc_a',
+                        'upc_e',
+                        'ean13',
+                        'ean8',
+                        'code39',
+                        'code128',
+                        'code93',
+                        'codabar',
+                        'itf14',
+                        'pdf417',
+                        'qr',
+                      ],
+                    }}
+                    onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+                  />
+                  <View style={styles.cameraScanFrameOverlay}>
+                    <View style={styles.cameraScanFrame} />
+                  </View>
+                </View>
+                <View style={styles.cameraModalFooter}>
+                  <Text style={styles.cameraModalHint}>
+                    Point your camera at a barcode to scan
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.cameraPermissionContainer}>
+                <Text style={styles.cameraPermissionText}>
+                  Camera permission is required to scan barcodes
+                </Text>
                 <TouchableOpacity
-                  style={styles.cameraCloseButton}
-                  onPress={() => {
-                    console.log('Close button pressed');
-                    setShowCamera(false);
-                    setScanned(false);
+                  style={styles.cameraPermissionButton}
+                  onPress={async () => {
+                    const result = await requestCameraPermission();
+                    if (!result.granted) {
+                      setShowCamera(false);
+                    }
                   }}
                 >
-                  <X color="#FFFFFF" size={moderateScale(24)} />
+                  <Text style={styles.cameraPermissionButtonText}>Grant Permission</Text>
                 </TouchableOpacity>
-                <Text style={styles.cameraTitle}>Scan Barcode</Text>
-                <View style={styles.cameraPlaceholder} />
+                <TouchableOpacity
+                  style={styles.cameraCloseButtonAlt}
+                  onPress={() => setShowCamera(false)}
+                >
+                  <Text style={styles.cameraCloseButtonAltText}>Close</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.cameraFooter}>
-                <Text style={styles.cameraHint}>
-                  Point your camera at a barcode to scan
-                </Text>
-                <View style={styles.cameraScanFrame} />
-              </View>
-            </>
-          ) : (
-            <View style={styles.cameraPermissionContainer}>
-              <Text style={styles.cameraPermissionText}>
-                Camera permission is required to scan barcodes
-              </Text>
-              <TouchableOpacity
-                style={styles.cameraPermissionButton}
-                onPress={async () => {
-                  const result = await requestCameraPermission();
-                  if (!result.granted) {
-                    setShowCamera(false);
-                  }
-                }}
-              >
-                <Text style={styles.cameraPermissionButtonText}>Grant Permission</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cameraCloseButtonAlt}
-                onPress={() => setShowCamera(false)}
-              >
-                <Text style={styles.cameraCloseButtonAltText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+            )}
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1970,68 +1998,74 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
-  cameraContainer: {
+  cameraModalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: moderateScale(20),
+  },
+  cameraModalContainer: {
+    width: '100%',
+    maxWidth: moderateScale(400),
+    backgroundColor: '#FFFFFF',
+    borderRadius: moderateScale(16),
+    overflow: 'hidden',
+    maxHeight: '80%',
+  },
+  cameraModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: moderateScale(16),
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  cameraModalTitle: {
+    fontSize: moderateScale(16),
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  cameraModalCloseButton: {
+    padding: moderateScale(4),
+  },
+  cameraViewContainer: {
+    width: '100%',
+    height: moderateScale(400),
+    position: 'relative',
     backgroundColor: '#000000',
   },
-  camera: {
+  cameraView: {
     flex: 1,
+    width: '100%',
   },
-  cameraHeader: {
+  cameraScanFrameOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: moderateScale(50),
-    paddingHorizontal: moderateScale(20),
-    paddingBottom: moderateScale(20),
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 1,
-  },
-  cameraCloseButton: {
-    width: moderateScale(40),
-    height: moderateScale(40),
-    borderRadius: moderateScale(20),
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  cameraTitle: {
-    fontSize: moderateScale(18),
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  cameraPlaceholder: {
-    width: moderateScale(40),
-  },
-  cameraFooter: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingBottom: moderateScale(40),
-    paddingHorizontal: moderateScale(20),
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingTop: moderateScale(20),
-    zIndex: 1,
-  },
-  cameraHint: {
-    fontSize: moderateScale(14),
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: moderateScale(16),
   },
   cameraScanFrame: {
     width: moderateScale(250),
     height: moderateScale(250),
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: '#14B8A6',
     borderRadius: moderateScale(12),
     backgroundColor: 'transparent',
+  },
+  cameraModalFooter: {
+    padding: moderateScale(16),
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  cameraModalHint: {
+    fontSize: moderateScale(12),
+    color: '#6B7280',
+    textAlign: 'center',
   },
   cameraNote: {
     fontSize: moderateScale(12),
