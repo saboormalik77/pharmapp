@@ -218,7 +218,7 @@ export function ProductsScreen() {
           if (isScannedNdc) {
             Alert.alert(
               'Invalid NDC',
-              'No medication was found for this scanned NDC code.',
+              'No medication was found for this NDC code.',
               [{ text: 'OK' }]
             );
           }
