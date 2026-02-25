@@ -20,11 +20,13 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to your camera to scan barcodes for product entry.",
-        "UIBackgroundModes": ["remote-notification", "fetch"],
-        "FirebaseAppDelegateProxyEnabled": false
+        "UIBackgroundModes": ["remote-notification", "fetch", "background-processing"],
+        "FirebaseAppDelegateProxyEnabled": false,
+        "BGTaskSchedulerPermittedIdentifiers": ["com.tmit.pharmanalytics.refresh"]
       },
       "entitlements": {
-        "aps-environment": "production"
+        "aps-environment": "production",
+        "com.apple.developer.usernotifications.communication": true
       }
     },
     "android": {
@@ -49,6 +51,16 @@
       }
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      "./plugins/withFirebasePushNotifications.js",
       "@react-native-community/datetimepicker",
       [
         "expo-camera",

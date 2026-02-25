@@ -1,26 +1,51 @@
 {
   "cli": {
-    "version": ">= 3.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium",
+        "simulator": false
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
       }
     },
     "production": {
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "resourceClass": "m-medium",
+        "autoIncrement": true
+      },
+      "autoIncrement": true
+    },
+    "production-simulator": {
+      "ios": {
+        "simulator": true,
+        "resourceClass": "m-medium"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "",
+        "ascAppId": "",
+        "appleTeamId": ""
+      }
+    }
   }
 }
 
